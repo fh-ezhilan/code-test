@@ -45,7 +45,6 @@ const AdminDashboard = () => {
   const [activeTab, setActiveTab] = useState(tabFromUrl === 'candidates' ? 1 : 0);
   const [openTestDialog, setOpenTestDialog] = useState(false);
   const [openCandidateDialog, setOpenCandidateDialog] = useState(false);
-  const [openProgramDialog, setOpenProgramDialog] = useState(false);
   const [openEditDialog, setOpenEditDialog] = useState(false);
   const [editingSession, setEditingSession] = useState(null);
   const [expandedProgram, setExpandedProgram] = useState(null);
@@ -60,10 +59,9 @@ const AdminDashboard = () => {
   const [sessionName, setSessionName] = useState('');
   const [sessionDuration, setSessionDuration] = useState(60);
   const [sessions, setSessions] = useState([]);
+  const [excelFile, setExcelFile] = useState(null);
   
   // Program States
-  const [programTitle, setProgramTitle] = useState('');
-  const [programDescription, setProgramDescription] = useState('');
   const [programs, setPrograms] = useState([]);
   
   // Candidate States
@@ -116,40 +114,29 @@ const AdminDashboard = () => {
 
   const handleCreateSession = async () => {
     try {
-      await axios.post('/api/admin/session', {
-        name: sessionName,
-        duration: sessionDuration,
-        programs: [],
-      }, {
-        withCredentials: true
+      const formData = new FormData();
+      formData.append('name', sessionName);
+      formData.append('duration', sessionDuration);
+      if (excelFile) {
+        formData.append('programsFile', excelFile);
+      }
+      
+      await axios.post('/api/admin/session', formData, {
+        withCredentials: true,
+        headers: {
+          'Content-Type': 'multipart/form-data'
+        }
       });
       setSessionName('');
       setSessionDuration(60);
+      setExcelFile(null);
       setOpenTestDialog(false);
       fetchSessions();
+      fetchPrograms();
       alert('Test session created successfully');
     } catch (err) {
       console.error(err);
-      alert('Failed to create test session');
-    }
-  };
-
-  const handleUploadProgram = async () => {
-    try {
-      await axios.post('/api/admin/program', {
-        title: programTitle,
-        description: programDescription,
-        testCases: [],
-      }, {
-        withCredentials: true
-      });
-      setProgramTitle('');
-      setProgramDescription('');
-      setOpenProgramDialog(false);
-      alert('Program uploaded successfully');
-    } catch (err) {
-      console.error(err);
-      alert('Failed to upload program');
+      alert('Failed to create test session: ' + (err.response?.data?.msg || err.message));
     }
   };
 
@@ -191,6 +178,8 @@ const AdminDashboard = () => {
     setSessionName(session.name);
     setSessionDuration(session.duration);
     setSelectedPrograms(session.programs.map(p => p._id || p));
+    // Set programs to only the session's programs instead of all programs
+    setPrograms(session.programs || []);
     setExpandedProgram(null);
     setOpenEditDialog(true);
   };
@@ -210,6 +199,7 @@ const AdminDashboard = () => {
       setSessionDuration(60);
       setSelectedPrograms([]);
       fetchSessions();
+      fetchPrograms(); // Restore full programs list
     } catch (err) {
       console.error(err);
       alert('Failed to update test session');
@@ -285,6 +275,15 @@ const AdminDashboard = () => {
     }
   };
 
+  const handleCloseEditDialog = () => {
+    setOpenEditDialog(false);
+    setEditingSession(null);
+    setSessionName('');
+    setSessionDuration(60);
+    setSelectedPrograms([]);
+    fetchPrograms(); // Restore full programs list
+  };
+
   return (
     <Box sx={{ flexGrow: 1, bgcolor: '#f5f7fa', minHeight: '100vh' }}>
       <AppBar position="static" sx={{ bgcolor: '#1e2329' }}>
@@ -321,14 +320,6 @@ const AdminDashboard = () => {
                 Active Tests
               </Typography>
               <Box>
-                <Button
-                  variant="outlined"
-                  startIcon={<AddIcon />}
-                  onClick={() => setOpenProgramDialog(true)}
-                  sx={{ mr: 2, textTransform: 'none' }}
-                >
-                  Add Program
-                </Button>
                 <Button
                   variant="contained"
                   startIcon={<AddIcon />}
@@ -513,37 +504,41 @@ const AdminDashboard = () => {
             value={sessionDuration}
             onChange={e => setSessionDuration(e.target.value)}
           />
+          
+          <Box sx={{ mt: 3, mb: 2 }}>
+            <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 600 }}>
+              Upload Programs (Excel/CSV File)
+            </Typography>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
+              Required columns: <strong>Title</strong>, <strong>Description</strong>
+            </Typography>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
+              Optional column: <strong>TestCases</strong> (can be JSON array or plain text)
+            </Typography>
+            <Button
+              variant="outlined"
+              component="label"
+              fullWidth
+              sx={{ textTransform: 'none' }}
+            >
+              {excelFile ? excelFile.name : 'Choose Excel/CSV File'}
+              <input
+                type="file"
+                hidden
+                accept=".xlsx,.xls,.csv"
+                onChange={(e) => setExcelFile(e.target.files[0])}
+              />
+            </Button>
+            {excelFile && (
+              <Typography variant="caption" color="success.main" sx={{ mt: 1, display: 'block' }}>
+                ✓ File selected: {excelFile.name}
+              </Typography>
+            )}
+          </Box>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setOpenTestDialog(false)}>Cancel</Button>
           <Button onClick={handleCreateSession} variant="contained">Create</Button>
-        </DialogActions>
-      </Dialog>
-
-      {/* Add Program Dialog */}
-      <Dialog open={openProgramDialog} onClose={() => setOpenProgramDialog(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>Add Program</DialogTitle>
-        <DialogContent>
-          <TextField
-            label="Program Title"
-            fullWidth
-            margin="normal"
-            value={programTitle}
-            onChange={e => setProgramTitle(e.target.value)}
-          />
-          <TextField
-            label="Program Description"
-            fullWidth
-            margin="normal"
-            multiline
-            rows={4}
-            value={programDescription}
-            onChange={e => setProgramDescription(e.target.value)}
-          />
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setOpenProgramDialog(false)}>Cancel</Button>
-          <Button onClick={handleUploadProgram} variant="contained">Add</Button>
         </DialogActions>
       </Dialog>
 
@@ -574,7 +569,7 @@ const AdminDashboard = () => {
       </Dialog>
 
       {/* Edit Test Session Dialog */}
-      <Dialog open={openEditDialog} onClose={() => setOpenEditDialog(false)} maxWidth="md" fullWidth>
+      <Dialog open={openEditDialog} onClose={handleCloseEditDialog} maxWidth="md" fullWidth>
         <DialogTitle>Edit Test Session</DialogTitle>
         <DialogContent>
           <TextField
@@ -702,7 +697,7 @@ const AdminDashboard = () => {
           )}
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setOpenEditDialog(false)}>Cancel</Button>
+          <Button onClick={handleCloseEditDialog}>Cancel</Button>
           <Button onClick={handleUpdateSession} variant="contained">Update</Button>
         </DialogActions>
       </Dialog>

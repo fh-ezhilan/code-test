@@ -2,6 +2,7 @@ const Program = require('../models/Program');
 const TestSession = require('../models/TestSession');
 const User = require('../models/User');
 const bcrypt = require('bcryptjs');
+const xlsx = require('xlsx');
 
 exports.uploadProgram = async (req, res) => {
   const { title, description, testCases } = req.body;
@@ -47,19 +48,76 @@ exports.updateProgram = async (req, res) => {
 };
 
 exports.createTestSession = async (req, res) => {
-  const { name, programs, duration } = req.body;
   try {
+    const { name, duration } = req.body;
+    let programIds = [];
+
+    // If Excel/CSV file is uploaded, parse and create programs
+    if (req.file) {
+      try {
+        // Read the file - xlsx library supports both Excel and CSV
+        const workbook = xlsx.read(req.file.buffer, { type: 'buffer' });
+        const sheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[sheetName];
+        const data = xlsx.utils.sheet_to_json(worksheet);
+
+        console.log('Parsed data from file:', JSON.stringify(data.slice(0, 2), null, 2));
+
+        if (data.length === 0) {
+          return res.status(400).json({ msg: 'File is empty or has no valid data' });
+        }
+
+        // Create programs from Excel/CSV data
+        for (const row of data) {
+          if (!row.Title || !row.Description) {
+            console.log('Skipping row due to missing Title or Description:', row);
+            continue; // Skip rows without required fields
+          }
+
+          // Handle TestCases - can be JSON string, plain text, or empty
+          let testCases = [];
+          if (row.TestCases) {
+            try {
+              // Try to parse as JSON first
+              testCases = JSON.parse(row.TestCases);
+            } catch (e) {
+              // If not valid JSON, store as plain text in description
+              // Don't create test case objects from plain text
+              console.log('TestCases is plain text, skipping:', row.TestCases);
+            }
+          }
+
+          const newProgram = new Program({
+            title: row.Title,
+            description: row.Description,
+            testCases: testCases,
+          });
+          const savedProgram = await newProgram.save();
+          programIds.push(savedProgram._id);
+          console.log('Created program:', savedProgram.title);
+        }
+
+        console.log(`Successfully created ${programIds.length} programs`);
+      } catch (parseErr) {
+        console.error('Error parsing file:', parseErr);
+        return res.status(400).json({ 
+          msg: 'Invalid file format. Ensure columns are: Title, Description, TestCases',
+          error: parseErr.message 
+        });
+      }
+    }
+
     const newTestSession = new TestSession({
       name,
-      programs,
+      programs: programIds,
       duration,
       createdBy: req.user.id,
     });
     const testSession = await newTestSession.save();
     res.json(testSession);
   } catch (err) {
-    console.error(err.message);
-    res.status(500).send('Server Error');
+    console.error('Error in createTestSession:', err.message);
+    res.status(500).json({ msg: 'Server Error', error: err.message });
   }
 };
 
