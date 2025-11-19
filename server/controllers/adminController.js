@@ -73,3 +73,42 @@ exports.createCandidate = async (req, res) => {
     res.status(500).send('Server error');
   }
 };
+
+exports.getCandidates = async (req, res) => {
+  try {
+    const candidates = await User.find({ role: 'candidate' })
+      .select('-password')
+      .populate('assignedProgram', 'title');
+    res.json(candidates);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).send('Server Error');
+  }
+};
+
+exports.getSessions = async (req, res) => {
+  try {
+    const sessions = await TestSession.find().populate('programs');
+    res.json(sessions);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).send('Server Error');
+  }
+};
+
+exports.deleteCandidate = async (req, res) => {
+  try {
+    const candidate = await User.findById(req.params.id);
+    if (!candidate) {
+      return res.status(404).json({ msg: 'Candidate not found' });
+    }
+    if (candidate.role !== 'candidate') {
+      return res.status(400).json({ msg: 'Can only delete candidates' });
+    }
+    await User.findByIdAndDelete(req.params.id);
+    res.json({ msg: 'Candidate deleted successfully' });
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).send('Server Error');
+  }
+};

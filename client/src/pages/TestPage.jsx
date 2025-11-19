@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Editor from '@monaco-editor/react';
 import axios from 'axios';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 import {
   Container,
   Typography,
@@ -13,13 +15,109 @@ import {
   FormControl,
   InputLabel,
   CircularProgress,
+  Tabs,
+  Tab,
+  IconButton,
+  Divider,
 } from '@mui/material';
+import { 
+  PlayArrow as RunIcon, 
+  CloudUpload as SubmitIcon,
+  Fullscreen as FullscreenIcon,
+  FullscreenExit as FullscreenExitIcon
+} from '@mui/icons-material';
 
 const TestPage = () => {
   const [program, setProgram] = useState(null);
   const [language, setLanguage] = useState('javascript');
   const [code, setCode] = useState('');
+  const [bottomTab, setBottomTab] = useState(0);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [leftPanelWidth, setLeftPanelWidth] = useState(40);
+  const [isResizing, setIsResizing] = useState(false);
+  const [bottomPanelHeight, setBottomPanelHeight] = useState(35);
+  const [isResizingVertical, setIsResizingVertical] = useState(false);
   const editorRef = useRef(null);
+  const navigate = useNavigate();
+  const { logout } = useAuth();
+
+  const handleLogout = async () => {
+    await logout();
+    navigate('/login');
+  };
+
+  const toggleFullscreen = () => {
+    setIsFullscreen(!isFullscreen);
+  };
+
+  const handleMouseDown = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsResizing(true);
+  };
+
+  const handleVerticalMouseDown = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsResizingVertical(true);
+  };
+
+  const handleMouseMove = (e) => {
+    if (!isResizing) return;
+    e.preventDefault();
+    const container = e.currentTarget;
+    const containerRect = container.getBoundingClientRect();
+    const newWidth = ((e.clientX - containerRect.left) / containerRect.width) * 100;
+    if (newWidth >= 20 && newWidth <= 70) {
+      setLeftPanelWidth(newWidth);
+    }
+  };
+
+  const handleMouseUp = () => {
+    setIsResizing(false);
+  };
+
+  useEffect(() => {
+    const handleGlobalMouseMove = (e) => {
+      if (isResizing) {
+        const container = document.querySelector('[data-main-container]');
+        if (!container) return;
+        const containerRect = container.getBoundingClientRect();
+        const newWidth = ((e.clientX - containerRect.left) / containerRect.width) * 100;
+        if (newWidth >= 20 && newWidth <= 70) {
+          setLeftPanelWidth(newWidth);
+        }
+      }
+      
+      if (isResizingVertical) {
+        const editorContainer = document.querySelector('[data-editor-container]');
+        if (!editorContainer) return;
+        const containerRect = editorContainer.getBoundingClientRect();
+        const newHeight = ((containerRect.bottom - e.clientY) / containerRect.height) * 100;
+        if (newHeight >= 20 && newHeight <= 70) {
+          setBottomPanelHeight(newHeight);
+        }
+      }
+    };
+
+    const handleGlobalMouseUp = () => {
+      setIsResizing(false);
+      setIsResizingVertical(false);
+    };
+
+    if (isResizing || isResizingVertical) {
+      document.body.style.cursor = isResizing ? 'col-resize' : 'row-resize';
+      document.body.style.userSelect = 'none';
+      document.addEventListener('mousemove', handleGlobalMouseMove);
+      document.addEventListener('mouseup', handleGlobalMouseUp);
+      return () => {
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+        document.removeEventListener('mousemove', handleGlobalMouseMove);
+        document.removeEventListener('mouseup', handleGlobalMouseUp);
+      };
+    }
+  }, [isResizing, isResizingVertical]);
 
   useEffect(() => {
     const fetchProgram = async () => {
@@ -99,42 +197,300 @@ const TestPage = () => {
   }
 
   return (
-    <Container maxWidth="xl" style={{ marginTop: '2rem' }}>
-      <Grid container spacing={2}>
-        <Grid item xs={12} md={5}>
-          <Paper elevation={3} style={{ padding: '1rem', height: 'calc(100vh - 100px)', overflowY: 'auto' }}>
-            <Typography variant="h5" gutterBottom>
-              {program.title}
+    <Box sx={{ height: '100vh', display: 'flex', flexDirection: 'column', bgcolor: '#fff' }}>
+      {/* Top Navigation Bar */}
+      <Box sx={{ 
+        bgcolor: '#fff', 
+        borderBottom: '1px solid #e0e0e0',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        px: 2,
+        py: 1
+      }}>
+        <Typography sx={{ color: '#000', fontWeight: 500 }}>
+          Code Editor
+        </Typography>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Button 
+            variant="contained" 
+            size="small"
+            onClick={handleLogout}
+            sx={{ 
+              bgcolor: '#ff4444',
+              textTransform: 'none',
+              '&:hover': { bgcolor: '#cc0000' }
+            }}
+          >
+            Logout
+          </Button>
+        </Box>
+      </Box>
+
+      {/* Main Content Area */}
+      <Box 
+        data-main-container
+        sx={{ flex: 1, display: 'flex', overflow: 'hidden', position: 'relative' }}
+      >
+        {/* Left Panel - Problem Description */}
+        {!isFullscreen && (
+          <Box sx={{ 
+            flexBasis: `${leftPanelWidth}%`,
+            flexShrink: 0,
+            flexGrow: 0,
+            borderRight: '1px solid #e0e0e0',
+            display: 'flex',
+            flexDirection: 'column',
+            bgcolor: '#fff',
+            overflow: 'hidden'
+          }}>
+          <Box sx={{ 
+            borderBottom: '1px solid #e0e0e0',
+            display: 'flex',
+            gap: 3,
+            px: 3,
+            pt: 2
+          }}>
+            <Typography 
+              sx={{ 
+                color: '#000', 
+                pb: 1,
+                borderBottom: '2px solid #000',
+                cursor: 'pointer',
+                fontSize: '14px',
+                fontWeight: 500
+              }}
+            >
+              Description
             </Typography>
-            <Typography paragraph>{program.description}</Typography>
-          </Paper>
-        </Grid>
-        <Grid item xs={12} md={7}>
-          <Box display="flex" justifyContent="space-between" alignItems="center" mb={1}>
-            <FormControl variant="outlined" size="small">
-              <InputLabel>Language</InputLabel>
-              <Select value={language} onChange={handleLanguageChange} label="Language">
+          </Box>
+          
+          <Box sx={{ flex: 1, overflow: 'auto', p: 3 }}>
+            <Typography variant="h5" sx={{ color: '#000', mb: 2 }}>
+              {program?.title}
+            </Typography>
+            <Box sx={{ display: 'flex', gap: 1, mb: 3 }}>
+              <Box sx={{ 
+                px: 1.5, 
+                py: 0.5, 
+                bgcolor: '#00b8a3', 
+                borderRadius: '12px',
+                fontSize: '12px',
+                color: '#fff'
+              }}>
+                Easy
+              </Box>
+            </Box>
+            <Typography sx={{ color: '#333', whiteSpace: 'pre-wrap', lineHeight: 1.8 }}>
+              {program?.description}
+            </Typography>
+          </Box>
+        </Box>
+        )}
+
+        {/* Resize Handle */}
+        {!isFullscreen && (
+          <Box
+            onMouseDown={handleMouseDown}
+            sx={{
+              width: '4px',
+              cursor: 'col-resize',
+              bgcolor: isResizing ? '#00b8a3' : '#e0e0e0',
+              '&:hover': {
+                bgcolor: '#00b8a3'
+              },
+              transition: 'background-color 0.2s',
+              position: 'relative',
+              zIndex: 10,
+              userSelect: 'none',
+              flexShrink: 0
+            }}
+          />
+        )}
+
+        {/* Right Panel - Code Editor */}
+        <Box 
+          data-editor-container
+          sx={{ 
+            flex: 1,
+            minWidth: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden'
+          }}
+        >
+          {/* Editor Header */}
+          <Box sx={{ 
+            bgcolor: '#f5f5f5',
+            borderBottom: '1px solid #e0e0e0',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            px: 2,
+            py: 1,
+            flexShrink: 0,
+            minWidth: 0
+          }}>
+            <FormControl size="small" sx={{ minWidth: 150 }}>
+              <Select
+                value={language}
+                onChange={handleLanguageChange}
+                sx={{
+                  color: '#000',
+                  '.MuiOutlinedInput-notchedOutline': { border: 'none' },
+                }}
+              >
                 <MenuItem value="javascript">JavaScript</MenuItem>
                 <MenuItem value="python">Python</MenuItem>
                 <MenuItem value="java">Java</MenuItem>
               </Select>
             </FormControl>
-            <Button variant="contained" color="primary" onClick={handleSubmit}>
-              Submit
-            </Button>
+            <IconButton size="small" onClick={toggleFullscreen} sx={{ color: '#666' }}>
+              {isFullscreen ? <FullscreenExitIcon fontSize="small" /> : <FullscreenIcon fontSize="small" />}
+            </IconButton>
           </Box>
-          <Paper elevation={3}>
+
+          {/* Code Editor */}
+          <Box sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
             <Editor
-              height="calc(100vh - 150px)"
+              height="100%"
               language={language}
               value={code}
               onMount={handleEditorDidMount}
-              theme="vs-dark"
+              theme="light"
+              options={{
+                minimap: { enabled: false },
+                fontSize: 14,
+                lineNumbers: 'on',
+                scrollBeyondLastLine: false,
+                automaticLayout: true,
+              }}
             />
-          </Paper>
-        </Grid>
-      </Grid>
-    </Container>
+          </Box>
+
+          {/* Vertical Resize Handle */}
+          {!isFullscreen && (
+            <Box
+              onMouseDown={handleVerticalMouseDown}
+              sx={{
+                height: '5px',
+                cursor: 'row-resize',
+                bgcolor: isResizingVertical ? '#00b8a3' : 'transparent',
+                '&:hover': {
+                  bgcolor: '#00b8a3'
+                },
+                transition: 'background-color 0.2s',
+                position: 'relative',
+                zIndex: 10,
+                userSelect: 'none',
+                flexShrink: 0
+              }}
+            />
+          )}
+
+          {/* Bottom Panel - Testcase/Results */}
+          {!isFullscreen && (
+            <Box sx={{ 
+              height: `${bottomPanelHeight}%`,
+              borderTop: '1px solid #e0e0e0',
+              bgcolor: '#fff',
+              display: 'flex',
+              flexDirection: 'column'
+            }}>
+            <Tabs 
+              value={bottomTab} 
+              onChange={(e, val) => setBottomTab(val)}
+              sx={{
+                minHeight: '40px',
+                borderBottom: '1px solid #e0e0e0',
+                '.MuiTab-root': {
+                  color: '#666',
+                  textTransform: 'none',
+                  minHeight: '40px',
+                  fontSize: '13px'
+                },
+                '.Mui-selected': {
+                  color: '#000'
+                },
+                '.MuiTabs-indicator': {
+                  bgcolor: '#000'
+                }
+              }}
+            >
+              <Tab label="Testcase" />
+              <Tab label="Test Result" />
+            </Tabs>
+
+            <Box sx={{ flex: 1, overflow: 'auto', p: 2 }}>
+              {bottomTab === 0 && (
+                <Box>
+                  <Typography sx={{ color: '#666', fontSize: '13px', mb: 1 }}>
+                    Case 1
+                  </Typography>
+                  <Box sx={{ 
+                    bgcolor: '#f5f5f5', 
+                    p: 2, 
+                    borderRadius: 1,
+                    border: '1px solid #e0e0e0',
+                    fontFamily: 'monospace',
+                    fontSize: '13px',
+                    color: '#000'
+                  }}>
+                    nums = [2,7,11,15], target = 9
+                  </Box>
+                </Box>
+              )}
+              {bottomTab === 1 && (
+                <Typography sx={{ color: '#666', fontSize: '13px' }}>
+                  You must run your code first.
+                </Typography>
+              )}
+            </Box>
+
+            {/* Action Buttons */}
+            <Box sx={{ 
+              borderTop: '1px solid #e0e0e0',
+              p: 2,
+              display: 'flex',
+              gap: 1,
+              justifyContent: 'flex-end',
+              bgcolor: '#fafafa'
+            }}>
+              <Button
+                variant="outlined"
+                startIcon={<RunIcon />}
+                sx={{
+                  color: '#000',
+                  borderColor: '#d0d0d0',
+                  textTransform: 'none',
+                  '&:hover': {
+                    borderColor: '#000',
+                    bgcolor: 'rgba(0,0,0,0.05)'
+                  }
+                }}
+              >
+                Run
+              </Button>
+              <Button
+                variant="contained"
+                startIcon={<SubmitIcon />}
+                onClick={handleSubmit}
+                sx={{
+                  bgcolor: '#00b8a3',
+                  textTransform: 'none',
+                  '&:hover': {
+                    bgcolor: '#009688'
+                  }
+                }}
+              >
+                Submit
+              </Button>
+            </Box>
+          </Box>
+          )}
+        </Box>
+      </Box>
+    </Box>
   );
 };
 

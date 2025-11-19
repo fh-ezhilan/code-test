@@ -59,3 +59,17 @@ exports.logout = (req, res) => {
     res.json({ msg: 'Logged out successfully' });
   });
 };
+
+exports.getCurrentUser = (req, res) => {
+  if (req.isAuthenticated()) {
+    res.json({
+      user: {
+        id: req.user._id,
+        username: req.user.username,
+        role: req.user.role,
+      },
+    });
+  } else {
+    res.status(401).json({ msg: 'Not authenticated' });
+  }
+};

@@ -23,6 +23,16 @@ exports.getTestInstructions = async (req, res) => {
 
 exports.getTestProgram = async (req, res) => {
   try {
+    const User = require('../models/User');
+    const user = await User.findById(req.user.id);
+    
+    // If user already has an assigned program, return it
+    if (user.assignedProgram) {
+      const program = await Program.findById(user.assignedProgram);
+      return res.json(program);
+    }
+    
+    // Otherwise, assign a random program
     const testSession = await TestSession.findOne().sort({ _id: -1 });
     if (!testSession) {
       return res.status(404).json({ msg: 'No active test session found' });
@@ -30,6 +40,11 @@ exports.getTestProgram = async (req, res) => {
     const programs = testSession.programs;
     const randomProgram = programs[Math.floor(Math.random() * programs.length)];
     const program = await Program.findById(randomProgram);
+    
+    // Save the assigned program to the user
+    user.assignedProgram = randomProgram;
+    await user.save();
+    
     res.json(program);
   } catch (err) {
     console.error(err.message);

@@ -8,12 +8,14 @@ import {
   Box,
 } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 
 const LoginPage = () => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const navigate = useNavigate();
+  const { login } = useAuth();
 
   const handleSubmit = async e => {
     e.preventDefault();
@@ -26,6 +28,7 @@ const LoginPage = () => {
         withCredentials: true
       });
       const { user } = res.data;
+      login(user);
       if (user.role === 'admin') {
         navigate('/admin');
       } else {

@@ -56,6 +56,41 @@
 			"command": "cd server && npm start",
 			"isBackground": true,
 			"problemMatcher": []
+		},
+		{
+			"label": "Start Server",
+			"type": "shell",
+			"command": "cd server && npm start",
+			"isBackground": true,
+			"problemMatcher": []
+		},
+		{
+			"label": "Start Client",
+			"type": "shell",
+			"command": "cd client && npm run dev",
+			"isBackground": true,
+			"problemMatcher": []
+		},
+		{
+			"label": "Backend Server",
+			"type": "shell",
+			"command": "cd server && npm start",
+			"isBackground": true,
+			"problemMatcher": []
+		},
+		{
+			"label": "Frontend Client",
+			"type": "shell",
+			"command": "cd client && npm run dev",
+			"isBackground": true,
+			"problemMatcher": []
+		},
+		{
+			"label": "Backend Server",
+			"type": "shell",
+			"command": "cd server && npm start",
+			"isBackground": true,
+			"problemMatcher": []
 		}
 	]
 }
