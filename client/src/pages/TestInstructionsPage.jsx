@@ -36,8 +36,14 @@ const TestInstructionsPage = () => {
     fetchInstructions();
   }, []);
 
-  const handleStartTest = () => {
-    navigate('/test');
+  const handleStartTest = async () => {
+    try {
+      await axios.post('/api/candidate/test/start', {}, { withCredentials: true });
+      navigate('/test');
+    } catch (err) {
+      console.error('Error starting test:', err);
+      navigate('/test');
+    }
   };
 
   if (error) {

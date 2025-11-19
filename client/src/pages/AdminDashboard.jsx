@@ -310,7 +310,15 @@ const AdminDashboard = () => {
                           )}
                         </TableCell>
                         <TableCell>
-                          <Chip label="Active" size="small" color="success" />
+                          {candidate.testStatus === 'not-started' && (
+                            <Chip label="Not Started" size="small" color="default" />
+                          )}
+                          {candidate.testStatus === 'in-progress' && (
+                            <Chip label="In Progress" size="small" color="warning" />
+                          )}
+                          {candidate.testStatus === 'completed' && (
+                            <Chip label="Completed" size="small" color="success" />
+                          )}
                         </TableCell>
                         <TableCell>
                           <IconButton 

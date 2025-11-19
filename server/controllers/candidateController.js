@@ -55,6 +55,7 @@ exports.getTestProgram = async (req, res) => {
 exports.submitSolution = async (req, res) => {
   const { programId, code, language } = req.body;
   try {
+    const User = require('../models/User');
     const newSolution = new Solution({
       program: programId,
       candidate: req.user.id,
@@ -62,7 +63,22 @@ exports.submitSolution = async (req, res) => {
       language,
     });
     const solution = await newSolution.save();
+    
+    // Update user status to completed
+    await User.findByIdAndUpdate(req.user.id, { testStatus: 'completed' });
+    
     res.json({ msg: 'Solution submitted successfully', solution });
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).send('Server Error');
+  }
+};
+
+exports.startTest = async (req, res) => {
+  try {
+    const User = require('../models/User');
+    await User.findByIdAndUpdate(req.user.id, { testStatus: 'in-progress' });
+    res.json({ msg: 'Test started' });
   } catch (err) {
     console.error(err.message);
     res.status(500).send('Server Error');

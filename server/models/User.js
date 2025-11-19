@@ -20,6 +20,11 @@ const UserSchema = new mongoose.Schema({
     ref: 'Program',
     default: null,
   },
+  testStatus: {
+    type: String,
+    enum: ['not-started', 'in-progress', 'completed'],
+    default: 'not-started',
+  },
 });
 
 module.exports = mongoose.model('User', UserSchema);
