@@ -45,6 +45,7 @@ exports.login = (req, res, next) => {
           id: user._id,
           username: user.username,
           role: user.role,
+          testStatus: user.testStatus,
         },
       });
     });
@@ -67,6 +68,7 @@ exports.getCurrentUser = (req, res) => {
         id: req.user._id,
         username: req.user.username,
         role: req.user.role,
+        testStatus: req.user.testStatus,
       },
     });
   } else {

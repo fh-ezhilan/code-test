@@ -7,6 +7,8 @@ import AdminDashboard from './pages/AdminDashboard';
 import CandidateDashboard from './pages/CandidateDashboard';
 import TestInstructionsPage from './pages/TestInstructionsPage';
 import TestPage from './pages/TestPage';
+import SubmissionSuccessPage from './pages/SubmissionSuccessPage';
+import TestCompletedPage from './pages/TestCompletedPage';
 
 function App() {
   return (
@@ -44,6 +46,22 @@ function App() {
             element={
               <ProtectedRoute allowedRoles={['candidate']}>
                 <TestPage />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/submission-success" 
+            element={
+              <ProtectedRoute allowedRoles={['candidate']}>
+                <SubmissionSuccessPage />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/test-completed" 
+            element={
+              <ProtectedRoute allowedRoles={['candidate']}>
+                <TestCompletedPage />
               </ProtectedRoute>
             } 
           />

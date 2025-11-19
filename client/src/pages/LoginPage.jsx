@@ -32,7 +32,12 @@ const LoginPage = () => {
       if (user.role === 'admin') {
         navigate('/admin');
       } else {
-        navigate('/test/instructions');
+        // Check if candidate has completed the test
+        if (user.testStatus === 'completed') {
+          navigate('/test-completed');
+        } else {
+          navigate('/test/instructions');
+        }
       }
     } catch (err) {
       console.error(err);

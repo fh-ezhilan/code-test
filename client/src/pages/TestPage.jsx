@@ -39,12 +39,19 @@ const TestPage = () => {
   const [isResizingVertical, setIsResizingVertical] = useState(false);
   const editorRef = useRef(null);
   const navigate = useNavigate();
-  const { logout } = useAuth();
+  const { logout, user } = useAuth();
 
   const handleLogout = async () => {
     await logout();
     navigate('/login');
   };
+
+  // Check if user has completed the test
+  useEffect(() => {
+    if (user?.testStatus === 'completed') {
+      navigate('/test-completed');
+    }
+  }, [user, navigate]);
 
   const toggleFullscreen = () => {
     setIsFullscreen(!isFullscreen);
@@ -179,8 +186,7 @@ const TestPage = () => {
           code: currentCode,
           language,
         }, { withCredentials: true });
-        alert('Solution submitted successfully!');
-        // Potentially redirect or show a summary page
+        navigate('/submission-success');
       } catch (err) {
         console.error(err);
         alert('Failed to submit solution.');

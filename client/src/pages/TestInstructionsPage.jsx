@@ -15,7 +15,7 @@ const TestInstructionsPage = () => {
   const [instructions, setInstructions] = useState(null);
   const [error, setError] = useState('');
   const navigate = useNavigate();
-  const { logout } = useAuth();
+  const { logout, user } = useAuth();
 
   const handleLogout = async () => {
     await logout();
@@ -23,6 +23,12 @@ const TestInstructionsPage = () => {
   };
 
   useEffect(() => {
+    // Check if user has completed the test
+    if (user?.testStatus === 'completed') {
+      navigate('/test-completed');
+      return;
+    }
+
     const fetchInstructions = async () => {
       try {
         // Assuming you have authentication in place to get the token
@@ -34,7 +40,7 @@ const TestInstructionsPage = () => {
       }
     };
     fetchInstructions();
-  }, []);
+  }, [user, navigate]);
 
   const handleStartTest = async () => {
     try {
