@@ -23,7 +23,14 @@ import {
   Chip,
   AppBar,
   Toolbar,
+  List,
+  ListItem,
+  ListItemText,
+  Collapse,
+  Checkbox,
+  FormControlLabel,
 } from '@mui/material';
+import { ExpandLess, ExpandMore } from '@mui/icons-material';
 import { Add as AddIcon, Delete as DeleteIcon, Edit as EditIcon } from '@mui/icons-material';
 import axios from 'axios';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -38,6 +45,13 @@ const AdminDashboard = () => {
   const [openTestDialog, setOpenTestDialog] = useState(false);
   const [openCandidateDialog, setOpenCandidateDialog] = useState(false);
   const [openProgramDialog, setOpenProgramDialog] = useState(false);
+  const [openEditDialog, setOpenEditDialog] = useState(false);
+  const [editingSession, setEditingSession] = useState(null);
+  const [expandedProgram, setExpandedProgram] = useState(null);
+  const [selectedPrograms, setSelectedPrograms] = useState([]);
+  const [editingProgram, setEditingProgram] = useState(null);
+  const [editProgramTitle, setEditProgramTitle] = useState('');
+  const [editProgramDescription, setEditProgramDescription] = useState('');
   
   // Test Session States
   const [sessionName, setSessionName] = useState('');
@@ -57,6 +71,7 @@ const AdminDashboard = () => {
   useEffect(() => {
     fetchCandidates();
     fetchSessions();
+    fetchPrograms();
   }, []);
 
   const fetchCandidates = async () => {
@@ -74,6 +89,15 @@ const AdminDashboard = () => {
       setSessions(res.data);
     } catch (err) {
       console.error('Error fetching sessions:', err);
+    }
+  };
+
+  const fetchPrograms = async () => {
+    try {
+      const res = await axios.get('/api/admin/programs', { withCredentials: true });
+      setPrograms(res.data);
+    } catch (err) {
+      console.error('Error fetching programs:', err);
     }
   };
 
@@ -138,7 +162,6 @@ const AdminDashboard = () => {
       setCandidatePassword('');
       setOpenCandidateDialog(false);
       fetchCandidates();
-      alert('Candidate created successfully');
     } catch (err) {
       console.error(err);
       alert('Failed to create candidate');
@@ -154,10 +177,95 @@ const AdminDashboard = () => {
         withCredentials: true
       });
       await fetchCandidates();
-      alert('Candidate deleted successfully');
     } catch (err) {
       console.error(err);
       alert('Failed to delete candidate');
+    }
+  };
+
+  const handleEditSession = (session) => {
+    setEditingSession(session);
+    setSessionName(session.name);
+    setSessionDuration(session.duration);
+    setSelectedPrograms(session.programs.map(p => p._id || p));
+    setExpandedProgram(null);
+    setOpenEditDialog(true);
+  };
+
+  const handleUpdateSession = async () => {
+    try {
+      await axios.put(`/api/admin/session/${editingSession._id}`, {
+        name: sessionName,
+        duration: sessionDuration,
+        programs: selectedPrograms,
+      }, {
+        withCredentials: true
+      });
+      setOpenEditDialog(false);
+      setEditingSession(null);
+      setSessionName('');
+      setSessionDuration(60);
+      setSelectedPrograms([]);
+      fetchSessions();
+    } catch (err) {
+      console.error(err);
+      alert('Failed to update test session');
+    }
+  };
+
+  const handleDeleteSession = async (sessionId) => {
+    if (!window.confirm('Are you sure you want to delete this test session?')) {
+      return;
+    }
+    try {
+      await axios.delete(`/api/admin/session/${sessionId}`, {
+        withCredentials: true
+      });
+      await fetchSessions();
+      alert('Test session deleted successfully');
+    } catch (err) {
+      console.error(err);
+      alert('Failed to delete test session');
+    }
+  };
+
+  const handleProgramToggle = (programId) => {
+    setSelectedPrograms(prev => {
+      if (prev.includes(programId)) {
+        return prev.filter(id => id !== programId);
+      } else {
+        return [...prev, programId];
+      }
+    });
+  };
+
+  const handleEditProgram = (program) => {
+    setEditingProgram(program._id);
+    setEditProgramTitle(program.title);
+    setEditProgramDescription(program.description);
+  };
+
+  const handleCancelEditProgram = () => {
+    setEditingProgram(null);
+    setEditProgramTitle('');
+    setEditProgramDescription('');
+  };
+
+  const handleUpdateProgram = async (programId) => {
+    try {
+      await axios.put(`/api/admin/program/${programId}`, {
+        title: editProgramTitle,
+        description: editProgramDescription,
+      }, {
+        withCredentials: true
+      });
+      await fetchPrograms();
+      setEditingProgram(null);
+      setEditProgramTitle('');
+      setEditProgramDescription('');
+    } catch (err) {
+      console.error(err);
+      alert('Failed to update program');
     }
   };
 
@@ -248,8 +356,20 @@ const AdminDashboard = () => {
                           <Chip label="Active" size="small" color="success" />
                         </TableCell>
                         <TableCell>
-                          <IconButton size="small"><EditIcon fontSize="small" /></IconButton>
-                          <IconButton size="small"><DeleteIcon fontSize="small" /></IconButton>
+                          <IconButton 
+                            size="small"
+                            onClick={() => handleEditSession(session)}
+                            color="primary"
+                          >
+                            <EditIcon fontSize="small" />
+                          </IconButton>
+                          <IconButton 
+                            size="small"
+                            onClick={() => handleDeleteSession(session._id)}
+                            color="error"
+                          >
+                            <DeleteIcon fontSize="small" />
+                          </IconButton>
                         </TableCell>
                       </TableRow>
                     ))
@@ -415,6 +535,140 @@ const AdminDashboard = () => {
         <DialogActions>
           <Button onClick={() => setOpenCandidateDialog(false)}>Cancel</Button>
           <Button onClick={handleCreateCandidate} variant="contained">Create</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Edit Test Session Dialog */}
+      <Dialog open={openEditDialog} onClose={() => setOpenEditDialog(false)} maxWidth="md" fullWidth>
+        <DialogTitle>Edit Test Session</DialogTitle>
+        <DialogContent>
+          <TextField
+            label="Test Name"
+            fullWidth
+            margin="normal"
+            value={sessionName}
+            onChange={e => setSessionName(e.target.value)}
+          />
+          <TextField
+            label="Duration (minutes)"
+            type="number"
+            fullWidth
+            margin="normal"
+            value={sessionDuration}
+            onChange={e => setSessionDuration(e.target.value)}
+          />
+          
+          <Typography variant="subtitle1" sx={{ mt: 3, mb: 1, fontWeight: 600 }}>
+            Programs
+          </Typography>
+          
+          {programs.length === 0 ? (
+            <Typography color="text.secondary" sx={{ py: 2 }}>
+              No programs available. Add programs first.
+            </Typography>
+          ) : (
+            <List sx={{ bgcolor: 'background.paper', border: '1px solid #e0e0e0', borderRadius: 1 }}>
+              {programs.map((program) => (
+                <React.Fragment key={program._id}>
+                  <ListItem
+                    sx={{ 
+                      '&:hover': { bgcolor: '#f5f5f5' },
+                      borderBottom: expandedProgram === program._id ? 'none' : '1px solid #e0e0e0',
+                      display: 'flex',
+                      alignItems: 'flex-start'
+                    }}
+                  >
+                    <FormControlLabel
+                      control={
+                        <Checkbox
+                          checked={selectedPrograms.includes(program._id)}
+                          onChange={() => handleProgramToggle(program._id)}
+                        />
+                      }
+                      label=""
+                      sx={{ mr: 1, mt: 1 }}
+                    />
+                    <Box sx={{ flex: 1, minWidth: 0 }}>
+                      {editingProgram === program._id ? (
+                        <Box sx={{ py: 1 }}>
+                          <TextField
+                            label="Program Title"
+                            fullWidth
+                            size="small"
+                            value={editProgramTitle}
+                            onChange={e => setEditProgramTitle(e.target.value)}
+                            sx={{ mb: 1 }}
+                          />
+                          <TextField
+                            label="Program Description"
+                            fullWidth
+                            size="small"
+                            multiline
+                            rows={4}
+                            value={editProgramDescription}
+                            onChange={e => setEditProgramDescription(e.target.value)}
+                          />
+                          <Box sx={{ mt: 1, display: 'flex', gap: 1 }}>
+                            <Button 
+                              size="small" 
+                              variant="contained"
+                              onClick={() => handleUpdateProgram(program._id)}
+                            >
+                              Save
+                            </Button>
+                            <Button 
+                              size="small" 
+                              variant="outlined"
+                              onClick={handleCancelEditProgram}
+                            >
+                              Cancel
+                            </Button>
+                          </Box>
+                        </Box>
+                      ) : (
+                        <>
+                          <ListItemText 
+                            primary={program.title}
+                            onClick={() => setExpandedProgram(expandedProgram === program._id ? null : program._id)}
+                            sx={{ flex: 1, cursor: 'pointer' }}
+                          />
+                          <Box sx={{ display: 'flex', gap: 1, mt: 0.5 }}>
+                            <Button
+                              size="small"
+                              startIcon={<EditIcon />}
+                              onClick={() => handleEditProgram(program)}
+                              sx={{ textTransform: 'none' }}
+                            >
+                              Edit
+                            </Button>
+                            <IconButton
+                              onClick={() => setExpandedProgram(expandedProgram === program._id ? null : program._id)}
+                              size="small"
+                            >
+                              {expandedProgram === program._id ? <ExpandLess /> : <ExpandMore />}
+                            </IconButton>
+                          </Box>
+                        </>
+                      )}
+                    </Box>
+                  </ListItem>
+                  {editingProgram !== program._id && (
+                    <Collapse in={expandedProgram === program._id} timeout="auto" unmountOnExit>
+                      <Box sx={{ p: 2, bgcolor: '#fafafa', borderBottom: '1px solid #e0e0e0' }}>
+                        <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: 'pre-wrap' }}>
+                          {program.description}
+                        </Typography>
+                      </Box>
+                    </Collapse>
+                  )}
+                </React.Fragment>
+              ))}
+            </List>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setOpenEditDialog(false)}>Cancel</Button>
+          <Button onClick={handleUpdateSession} variant="contained">Update</Button>
         </DialogActions>
       </Dialog>
     </Box>

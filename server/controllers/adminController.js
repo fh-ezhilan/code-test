@@ -19,6 +19,33 @@ exports.uploadProgram = async (req, res) => {
   }
 };
 
+exports.getPrograms = async (req, res) => {
+  try {
+    const programs = await Program.find();
+    res.json(programs);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).send('Server Error');
+  }
+};
+
+exports.updateProgram = async (req, res) => {
+  const { title, description } = req.body;
+  try {
+    let program = await Program.findById(req.params.id);
+    if (!program) {
+      return res.status(404).json({ msg: 'Program not found' });
+    }
+    if (title !== undefined) program.title = title;
+    if (description !== undefined) program.description = description;
+    await program.save();
+    res.json(program);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).send('Server Error');
+  }
+};
+
 exports.createTestSession = async (req, res) => {
   const { name, programs, duration } = req.body;
   try {
@@ -37,13 +64,15 @@ exports.createTestSession = async (req, res) => {
 };
 
 exports.updateTestSession = async (req, res) => {
-  const { duration } = req.body;
+  const { name, duration, programs } = req.body;
   try {
     let testSession = await TestSession.findById(req.params.id);
     if (!testSession) {
       return res.status(404).json({ msg: 'Test session not found' });
     }
-    testSession.duration = duration;
+    if (name !== undefined) testSession.name = name;
+    if (duration !== undefined) testSession.duration = duration;
+    if (programs !== undefined) testSession.programs = programs;
     await testSession.save();
     res.json(testSession);
   } catch (err) {
@@ -90,6 +119,20 @@ exports.getSessions = async (req, res) => {
   try {
     const sessions = await TestSession.find().populate('programs');
     res.json(sessions);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).send('Server Error');
+  }
+};
+
+exports.deleteTestSession = async (req, res) => {
+  try {
+    const session = await TestSession.findById(req.params.id);
+    if (!session) {
+      return res.status(404).json({ msg: 'Test session not found' });
+    }
+    await TestSession.findByIdAndDelete(req.params.id);
+    res.json({ msg: 'Test session deleted successfully' });
   } catch (err) {
     console.error(err.message);
     res.status(500).send('Server Error');
