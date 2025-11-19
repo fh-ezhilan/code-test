@@ -155,3 +155,19 @@ exports.deleteCandidate = async (req, res) => {
     res.status(500).send('Server Error');
   }
 };
+
+exports.getCandidateSolution = async (req, res) => {
+  try {
+    const Solution = require('../models/Solution');
+    const solution = await Solution.findOne({ candidate: req.params.id })
+      .populate('program', 'title')
+      .sort({ submittedAt: -1 });
+    if (!solution) {
+      return res.status(404).json({ msg: 'No solution found for this candidate' });
+    }
+    res.json(solution);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).send('Server Error');
+  }
+};

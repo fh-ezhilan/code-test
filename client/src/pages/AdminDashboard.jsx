@@ -32,6 +32,7 @@ import {
 } from '@mui/material';
 import { ExpandLess, ExpandMore } from '@mui/icons-material';
 import { Add as AddIcon, Delete as DeleteIcon, Edit as EditIcon } from '@mui/icons-material';
+import Editor from '@monaco-editor/react';
 import axios from 'axios';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
@@ -52,6 +53,8 @@ const AdminDashboard = () => {
   const [editingProgram, setEditingProgram] = useState(null);
   const [editProgramTitle, setEditProgramTitle] = useState('');
   const [editProgramDescription, setEditProgramDescription] = useState('');
+  const [openSolutionDialog, setOpenSolutionDialog] = useState(false);
+  const [viewingSolution, setViewingSolution] = useState(null);
   
   // Test Session States
   const [sessionName, setSessionName] = useState('');
@@ -269,6 +272,19 @@ const AdminDashboard = () => {
     }
   };
 
+  const handleViewSolution = async (candidateId) => {
+    try {
+      const res = await axios.get(`/api/admin/candidate/${candidateId}/solution`, {
+        withCredentials: true
+      });
+      setViewingSolution(res.data);
+      setOpenSolutionDialog(true);
+    } catch (err) {
+      console.error(err);
+      alert('No solution found for this candidate');
+    }
+  };
+
   return (
     <Box sx={{ flexGrow: 1, bgcolor: '#f5f7fa', minHeight: '100vh' }}>
       <AppBar position="static" sx={{ bgcolor: '#1e2329' }}>
@@ -408,19 +424,29 @@ const AdminDashboard = () => {
                     <TableCell sx={{ fontWeight: 600 }}>Username</TableCell>
                     <TableCell sx={{ fontWeight: 600 }}>Problem Title</TableCell>
                     <TableCell sx={{ fontWeight: 600 }}>Status</TableCell>
+                    <TableCell sx={{ fontWeight: 600 }}>Score</TableCell>
+                    <TableCell sx={{ fontWeight: 600 }}>Result</TableCell>
                     <TableCell sx={{ fontWeight: 600 }}>Actions</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
                   {candidates.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={4} align="center" sx={{ py: 4 }}>
+                      <TableCell colSpan={6} align="center" sx={{ py: 4 }}>
                         <Typography color="text.secondary">No candidates created yet</Typography>
                       </TableCell>
                     </TableRow>
                   ) : (
                     candidates.map((candidate) => (
-                      <TableRow key={candidate._id} hover>
+                      <TableRow 
+                        key={candidate._id} 
+                        hover
+                        onClick={() => candidate.testStatus === 'completed' && handleViewSolution(candidate._id)}
+                        sx={{ 
+                          cursor: candidate.testStatus === 'completed' ? 'pointer' : 'default',
+                          '&:hover': candidate.testStatus === 'completed' ? { bgcolor: '#f5f5f5' } : {}
+                        }}
+                      >
                         <TableCell>{candidate.username}</TableCell>
                         <TableCell>
                           {candidate.assignedProgram?.title ? (
@@ -441,9 +467,18 @@ const AdminDashboard = () => {
                           )}
                         </TableCell>
                         <TableCell>
+                          <Typography variant="body2" color="text.secondary">-</Typography>
+                        </TableCell>
+                        <TableCell>
+                          <Typography variant="body2" color="text.secondary">-</Typography>
+                        </TableCell>
+                        <TableCell>
                           <IconButton 
                             size="small" 
-                            onClick={() => handleDeleteCandidate(candidate._id)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteCandidate(candidate._id);
+                            }}
                             color="error"
                           >
                             <DeleteIcon fontSize="small" />
@@ -669,6 +704,47 @@ const AdminDashboard = () => {
         <DialogActions>
           <Button onClick={() => setOpenEditDialog(false)}>Cancel</Button>
           <Button onClick={handleUpdateSession} variant="contained">Update</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* View Solution Dialog */}
+      <Dialog 
+        open={openSolutionDialog} 
+        onClose={() => setOpenSolutionDialog(false)} 
+        maxWidth="lg" 
+        fullWidth
+      >
+        <DialogTitle>
+          {viewingSolution && (
+            <Box>
+              <Typography variant="h6">Submitted Solution</Typography>
+              <Typography variant="body2" color="text.secondary">
+                Problem: {viewingSolution.program?.title} | 
+                Language: {viewingSolution.language} | 
+                Submitted: {new Date(viewingSolution.submittedAt).toLocaleString()}
+              </Typography>
+            </Box>
+          )}
+        </DialogTitle>
+        <DialogContent sx={{ height: '500px', p: 0 }}>
+          {viewingSolution && (
+            <Editor
+              height="100%"
+              language={viewingSolution.language.toLowerCase()}
+              value={viewingSolution.code}
+              theme="light"
+              options={{
+                readOnly: true,
+                minimap: { enabled: false },
+                fontSize: 14,
+                lineNumbers: 'on',
+                scrollBeyondLastLine: false,
+              }}
+            />
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setOpenSolutionDialog(false)}>Close</Button>
         </DialogActions>
       </Dialog>
     </Box>
