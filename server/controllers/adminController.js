@@ -140,16 +140,28 @@ exports.updateTestSession = async (req, res) => {
 };
 
 exports.createCandidate = async (req, res) => {
-  const { username, password } = req.body;
+  const { username, password, testSessionId } = req.body;
   try {
+    if (!testSessionId) {
+      return res.status(400).json({ msg: 'Test session is required' });
+    }
+
     let user = await User.findOne({ username });
     if (user) {
       return res.status(400).json({ msg: 'User already exists' });
     }
+
+    // Verify test session exists
+    const testSession = await TestSession.findById(testSessionId);
+    if (!testSession) {
+      return res.status(400).json({ msg: 'Test session not found' });
+    }
+
     user = new User({
       username,
       password,
       role: 'candidate',
+      assignedTest: testSessionId,
     });
     const salt = await bcrypt.genSalt(10);
     user.password = await bcrypt.hash(password, salt);
@@ -183,10 +195,34 @@ exports.bulkCreateCandidates = async (req, res) => {
     let skipped = 0;
     const errors = [];
 
+    // Get all test sessions for matching
+    const testSessions = await TestSession.find();
+    const testSessionMap = {};
+    testSessions.forEach(session => {
+      testSessionMap[session.name.toLowerCase()] = session._id;
+    });
+
     // Create candidates from Excel/CSV data
     for (const row of data) {
       if (!row.username || !row.password) {
         console.log('Skipping row due to missing username or password:', row);
+        errors.push(`Row with username ${row.username || 'N/A'} is missing required fields`);
+        skipped++;
+        continue;
+      }
+
+      if (!row.Test) {
+        console.log('Skipping row due to missing Test:', row);
+        errors.push(`User ${row.username}: Test name is required`);
+        skipped++;
+        continue;
+      }
+
+      // Find test session by name (case insensitive)
+      const testSessionId = testSessionMap[row.Test.toLowerCase()];
+      if (!testSessionId) {
+        console.log('Skipping row due to test name not found:', row.Test);
+        errors.push(`User ${row.username}: Test "${row.Test}" not found`);
         skipped++;
         continue;
       }
@@ -205,6 +241,7 @@ exports.bulkCreateCandidates = async (req, res) => {
           username: row.username,
           password: row.password,
           role: 'candidate',
+          assignedTest: testSessionId,
         });
         const salt = await bcrypt.genSalt(10);
         user.password = await bcrypt.hash(row.password, salt);
@@ -236,7 +273,8 @@ exports.getCandidates = async (req, res) => {
   try {
     const candidates = await User.find({ role: 'candidate' })
       .select('-password')
-      .populate('assignedProgram', 'title');
+      .populate('assignedProgram', 'title')
+      .populate('assignedTest', 'name');
     res.json(candidates);
   } catch (err) {
     console.error(err.message);
@@ -265,6 +303,44 @@ exports.deleteTestSession = async (req, res) => {
   } catch (err) {
     console.error(err.message);
     res.status(500).send('Server Error');
+  }
+};
+
+exports.updateCandidate = async (req, res) => {
+  try {
+    const { testSessionId } = req.body;
+    console.log('Update candidate request:', { candidateId: req.params.id, testSessionId });
+    
+    const candidate = await User.findById(req.params.id);
+    
+    if (!candidate) {
+      console.log('Candidate not found:', req.params.id);
+      return res.status(404).json({ msg: 'Candidate not found' });
+    }
+    
+    if (candidate.role !== 'candidate') {
+      console.log('Not a candidate:', candidate.role);
+      return res.status(400).json({ msg: 'Can only update candidates' });
+    }
+
+    // Verify test session exists
+    if (testSessionId) {
+      const testSession = await TestSession.findById(testSessionId);
+      if (!testSession) {
+        console.log('Test session not found:', testSessionId);
+        return res.status(400).json({ msg: 'Test session not found' });
+      }
+      candidate.assignedTest = testSessionId;
+      // Reset assigned program since test changed
+      candidate.assignedProgram = null;
+    }
+
+    await candidate.save();
+    console.log('Candidate updated successfully:', candidate.username);
+    res.json({ msg: 'Candidate updated successfully' });
+  } catch (err) {
+    console.error('Error updating candidate:', err.message, err);
+    res.status(500).json({ msg: 'Server Error', error: err.message });
   }
 };
 

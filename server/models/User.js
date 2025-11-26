@@ -20,6 +20,11 @@ const UserSchema = new mongoose.Schema({
     ref: 'Program',
     default: null,
   },
+  assignedTest: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'TestSession',
+    default: null,
+  },
   testStatus: {
     type: String,
     enum: ['not-started', 'in-progress', 'completed'],

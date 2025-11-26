@@ -16,6 +16,7 @@ router.delete('/session/:id', isAdmin, adminController.deleteTestSession);
 router.post('/candidate', isAdmin, adminController.createCandidate);
 router.post('/candidates/bulk', isAdmin, upload.single('candidatesFile'), adminController.bulkCreateCandidates);
 router.get('/candidates', isAdmin, adminController.getCandidates);
+router.put('/candidate/:id', isAdmin, adminController.updateCandidate);
 router.delete('/candidate/:id', isAdmin, adminController.deleteCandidate);
 router.get('/candidate/:id/solution', isAdmin, adminController.getCandidateSolution);
 router.get('/sessions', isAdmin, adminController.getSessions);

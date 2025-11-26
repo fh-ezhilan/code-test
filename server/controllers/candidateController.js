@@ -32,11 +32,23 @@ exports.getTestProgram = async (req, res) => {
       return res.json(program);
     }
     
-    // Otherwise, assign a random program
-    const testSession = await TestSession.findOne().sort({ _id: -1 });
-    if (!testSession) {
-      return res.status(404).json({ msg: 'No active test session found' });
+    // Check if user has an assigned test
+    if (!user.assignedTest) {
+      return res.status(400).json({ msg: 'No test assigned to this candidate' });
     }
+    
+    // Get the test session assigned to this candidate
+    const testSession = await TestSession.findById(user.assignedTest);
+    if (!testSession) {
+      return res.status(404).json({ msg: 'Assigned test session not found' });
+    }
+    
+    // Check if test has programs
+    if (!testSession.programs || testSession.programs.length === 0) {
+      return res.status(404).json({ msg: 'No programs available in the assigned test' });
+    }
+    
+    // Pick a random program from the assigned test
     const programs = testSession.programs;
     const randomProgram = programs[Math.floor(Math.random() * programs.length)];
     const program = await Program.findById(randomProgram);

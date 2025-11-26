@@ -32,6 +32,10 @@ import {
   TablePagination,
   Snackbar,
   Alert,
+  Select,
+  MenuItem,
+  FormControl,
+  InputLabel,
 } from '@mui/material';
 import { ExpandLess, ExpandMore } from '@mui/icons-material';
 import { Add as AddIcon, Delete as DeleteIcon, Edit as EditIcon } from '@mui/icons-material';
@@ -75,13 +79,20 @@ const AdminDashboard = () => {
   // Candidate States
   const [candidateUsername, setCandidateUsername] = useState('');
   const [candidatePassword, setCandidatePassword] = useState('');
+  const [candidateTestSession, setCandidateTestSession] = useState('');
   const [candidates, setCandidates] = useState([]);
   const [candidateFile, setCandidateFile] = useState(null);
   const [selectedCandidates, setSelectedCandidates] = useState([]);
   const [candidatePage, setCandidatePage] = useState(0);
   const [candidateRowsPerPage, setCandidateRowsPerPage] = useState(20);
   const [openBulkDeleteDialog, setOpenBulkDeleteDialog] = useState(false);
-  const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
+  const [snackbars, setSnackbars] = useState([]);
+  const [editingCandidate, setEditingCandidate] = useState(null);
+  const [openEditCandidateDialog, setOpenEditCandidateDialog] = useState(false);
+  const [editCandidateTestSession, setEditCandidateTestSession] = useState('');
+  
+  // Delete confirmation states
+  const [deleteConfirmDialog, setDeleteConfirmDialog] = useState({ open: false, type: '', id: null, name: '' });
 
   // Admin States
   const [adminUsername, setAdminUsername] = useState('');
@@ -101,6 +112,16 @@ const AdminDashboard = () => {
     fetchPrograms();
     fetchAdmins();
   }, []);
+
+  // Helper functions for snackbar management
+  const addSnackbar = (message, severity = 'success') => {
+    const id = Date.now() + Math.random(); // Unique ID
+    setSnackbars(prev => [...prev, { id, message, severity }]);
+  };
+
+  const removeSnackbar = (id) => {
+    setSnackbars(prev => prev.filter(snackbar => snackbar.id !== id));
+  };
 
   const fetchCandidates = async () => {
     try {
@@ -175,44 +196,165 @@ const AdminDashboard = () => {
         const formData = new FormData();
         formData.append('candidatesFile', candidateFile);
         
-        await axios.post('/api/admin/candidates/bulk', formData, {
+        const res = await axios.post('/api/admin/candidates/bulk', formData, {
           withCredentials: true,
           headers: {
             'Content-Type': 'multipart/form-data'
           }
         });
+
+        // Show messages based on results
+        if (res.data.created > 0 && res.data.skipped === 0) {
+          // All records uploaded successfully
+          addSnackbar(`${res.data.created} candidate(s) created successfully`, 'success');
+        } else if (res.data.created === 0 && res.data.skipped > 0) {
+          // All records failed
+          const messages = [];
+          
+          const missingFieldsCount = res.data.errors?.filter(err => 
+            err.includes('missing required fields') || 
+            err.includes('Test name is required')
+          ).length || 0;
+          
+          const testNotFoundCount = res.data.errors?.filter(err => 
+            err.includes('not found')
+          ).length || 0;
+          
+          const duplicateCount = res.data.errors?.filter(err => 
+            err.includes('already exists')
+          ).length || 0;
+          
+          if (missingFieldsCount > 0) {
+            messages.push(`${missingFieldsCount} candidate(s) not uploaded due to missing data`);
+          }
+          if (testNotFoundCount > 0) {
+            messages.push(`${testNotFoundCount} candidate(s) not uploaded because Test name doesn't match`);
+          }
+          if (duplicateCount > 0) {
+            messages.push(`${duplicateCount} candidate(s) skipped (already exists)`);
+          }
+          
+          addSnackbar(messages.join('. '), 'error');
+        } else if (res.data.created > 0 && res.data.skipped > 0) {
+          // Partial success - show both success and errors
+          const errorMessages = [];
+          
+          const missingFieldsCount = res.data.errors?.filter(err => 
+            err.includes('missing required fields') || 
+            err.includes('Test name is required')
+          ).length || 0;
+          
+          const testNotFoundCount = res.data.errors?.filter(err => 
+            err.includes('not found')
+          ).length || 0;
+          
+          const duplicateCount = res.data.errors?.filter(err => 
+            err.includes('already exists')
+          ).length || 0;
+          
+          if (missingFieldsCount > 0) {
+            errorMessages.push(`${missingFieldsCount} not uploaded (missing data)`);
+          }
+          if (testNotFoundCount > 0) {
+            errorMessages.push(`${testNotFoundCount} not uploaded (test not found)`);
+          }
+          if (duplicateCount > 0) {
+            errorMessages.push(`${duplicateCount} skipped (duplicates)`);
+          }
+          
+          // Show both messages stacked
+          addSnackbar(`${res.data.created} candidate(s) created successfully`, 'success');
+          addSnackbar(errorMessages.join('. '), 'error');
+        }
+        
         setCandidateFile(null);
       } else {
         // Single candidate creation
+        if (!candidateUsername || !candidatePassword || !candidateTestSession) {
+          addSnackbar('Please fill in all required fields', 'warning');
+          return;
+        }
+
         await axios.post('/api/admin/candidate', {
           username: candidateUsername,
           password: candidatePassword,
+          testSessionId: candidateTestSession,
         }, {
           withCredentials: true
         });
+        addSnackbar('Candidate created successfully', 'success');
       }
       setCandidateUsername('');
       setCandidatePassword('');
+      setCandidateTestSession('');
       setOpenCandidateDialog(false);
       fetchCandidates();
     } catch (err) {
       console.error(err);
-      alert('Failed to create candidate: ' + (err.response?.data?.msg || err.message));
+      addSnackbar('Failed to create candidate: ' + (err.response?.data?.msg || err.message), 'error');
+    }
+  };
+
+  const handleEditCandidate = (candidate) => {
+    setEditingCandidate(candidate);
+    setEditCandidateTestSession(candidate.assignedTest?._id || '');
+    setOpenEditCandidateDialog(true);
+  };
+
+  const handleUpdateCandidate = async () => {
+    if (!editCandidateTestSession) {
+      addSnackbar('Please select a test', 'warning');
+      return;
+    }
+
+    try {
+      await axios.put(`/api/admin/candidate/${editingCandidate._id}`, {
+        testSessionId: editCandidateTestSession,
+      }, {
+        withCredentials: true
+      });
+      setOpenEditCandidateDialog(false);
+      setEditingCandidate(null);
+      setEditCandidateTestSession('');
+      addSnackbar('Candidate updated successfully', 'success');
+      fetchCandidates();
+    } catch (err) {
+      console.error(err);
+      addSnackbar(err.response?.data?.msg || 'Failed to update candidate', 'error');
     }
   };
 
   const handleDeleteCandidate = async (candidateId) => {
-    if (!window.confirm('Are you sure you want to delete this candidate?')) {
-      return;
-    }
+    const candidate = candidates.find(c => c._id === candidateId);
+    setDeleteConfirmDialog({
+      open: true,
+      type: 'candidate',
+      id: candidateId,
+      name: candidate?.username || 'this candidate'
+    });
+  };
+
+  const confirmDelete = async () => {
+    const { type, id } = deleteConfirmDialog;
+    setDeleteConfirmDialog({ open: false, type: '', id: null, name: '' });
+
     try {
-      await axios.delete(`/api/admin/candidate/${candidateId}`, {
-        withCredentials: true
-      });
-      await fetchCandidates();
+      if (type === 'candidate') {
+        await axios.delete(`/api/admin/candidate/${id}`, { withCredentials: true });
+        addSnackbar('Candidate deleted successfully', 'success');
+        await fetchCandidates();
+      } else if (type === 'admin') {
+        await axios.delete(`/api/admin/admin/${id}`, { withCredentials: true });
+        addSnackbar('Admin deleted successfully', 'success');
+        await fetchAdmins();
+      } else if (type === 'session') {
+        await axios.delete(`/api/admin/session/${id}`, { withCredentials: true });
+        addSnackbar('Test session deleted successfully', 'success');
+        await fetchSessions();
+      }
     } catch (err) {
       console.error(err);
-      alert('Failed to delete candidate');
+      addSnackbar(err.response?.data?.msg || `Failed to delete ${type}`, 'error');
     }
   };
 
@@ -249,7 +391,7 @@ const AdminDashboard = () => {
 
   const handleBulkDeleteCandidates = async () => {
     if (selectedCandidates.length === 0) {
-      setSnackbar({ open: true, message: 'No candidates selected', severity: 'warning' });
+      addSnackbar('No candidates selected', 'warning');
       return;
     }
     setOpenBulkDeleteDialog(true);
@@ -266,15 +408,11 @@ const AdminDashboard = () => {
       );
       setSelectedCandidates([]);
       await fetchCandidates();
-      setSnackbar({ open: true, message: `${count} candidate(s) deleted successfully`, severity: 'success' });
+      addSnackbar(`${count} candidate(s) deleted successfully`, 'success');
     } catch (err) {
       console.error(err);
-      setSnackbar({ open: true, message: 'Failed to delete some candidates', severity: 'error' });
+      addSnackbar('Failed to delete some candidates', 'error');
     }
-  };
-
-  const handleCloseSnackbar = () => {
-    setSnackbar({ ...snackbar, open: false });
   };
 
   // Admin User Management Functions
@@ -289,7 +427,7 @@ const AdminDashboard = () => {
 
   const handleCreateAdmin = async () => {
     if (!adminUsername || !adminPassword) {
-      setSnackbar({ open: true, message: 'Please fill in all fields', severity: 'warning' });
+      addSnackbar('Please fill in all fields', 'warning');
       return;
     }
 
@@ -304,16 +442,12 @@ const AdminDashboard = () => {
           withCredentials: true,
           headers: { 'Content-Type': 'multipart/form-data' }
         });
-        setSnackbar({ 
-          open: true, 
-          message: `Created ${res.data.created} admin(s). Skipped ${res.data.skipped}.`, 
-          severity: 'success' 
-        });
+        addSnackbar(`Created ${res.data.created} admin(s). Skipped ${res.data.skipped}.`, 'success');
       } else {
         await axios.post('/api/admin/admin', { username: adminUsername, password: adminPassword }, {
           withCredentials: true
         });
-        setSnackbar({ open: true, message: 'Admin created successfully', severity: 'success' });
+        addSnackbar('Admin created successfully', 'success');
       }
       
       setAdminUsername('');
@@ -323,32 +457,18 @@ const AdminDashboard = () => {
       fetchAdmins();
     } catch (err) {
       console.error(err);
-      setSnackbar({ 
-        open: true, 
-        message: 'Failed to create admin: ' + (err.response?.data?.msg || err.message), 
-        severity: 'error' 
-      });
+      addSnackbar('Failed to create admin: ' + (err.response?.data?.msg || err.message), 'error');
     }
   };
 
   const handleDeleteAdmin = async (adminId) => {
-    if (!window.confirm('Are you sure you want to delete this admin?')) {
-      return;
-    }
-    try {
-      await axios.delete(`/api/admin/admin/${adminId}`, {
-        withCredentials: true
-      });
-      setSnackbar({ open: true, message: 'Admin deleted successfully', severity: 'success' });
-      await fetchAdmins();
-    } catch (err) {
-      console.error(err);
-      setSnackbar({ 
-        open: true, 
-        message: err.response?.data?.msg || 'Failed to delete admin', 
-        severity: 'error' 
-      });
-    }
+    const admin = admins.find(a => a._id === adminId);
+    setDeleteConfirmDialog({
+      open: true,
+      type: 'admin',
+      id: adminId,
+      name: admin?.username || 'this admin'
+    });
   };
 
   const handleSelectAllAdmins = (event) => {
@@ -384,7 +504,7 @@ const AdminDashboard = () => {
 
   const handleBulkDeleteAdmins = async () => {
     if (selectedAdmins.length === 0) {
-      setSnackbar({ open: true, message: 'No admins selected', severity: 'warning' });
+      addSnackbar('No admins selected', 'warning');
       return;
     }
     setOpenBulkDeleteAdminDialog(true);
@@ -401,10 +521,10 @@ const AdminDashboard = () => {
       );
       setSelectedAdmins([]);
       await fetchAdmins();
-      setSnackbar({ open: true, message: `${count} admin(s) deleted successfully`, severity: 'success' });
+      addSnackbar(`${count} admin(s) deleted successfully`, 'success');
     } catch (err) {
       console.error(err);
-      setSnackbar({ open: true, message: 'Failed to delete some admins', severity: 'error' });
+      addSnackbar('Failed to delete some admins', 'error');
     }
   };
 
@@ -426,7 +546,7 @@ const AdminDashboard = () => {
 
   const handleUpdateAdmin = async () => {
     if (!editAdminUsername) {
-      setSnackbar({ open: true, message: 'Username is required', severity: 'warning' });
+      addSnackbar('Username is required', 'warning');
       return;
     }
 
@@ -441,15 +561,11 @@ const AdminDashboard = () => {
       setEditingAdmin(null);
       setEditAdminUsername('');
       setEditAdminPassword('');
-      setSnackbar({ open: true, message: 'Admin updated successfully', severity: 'success' });
+      addSnackbar('Admin updated successfully', 'success');
       fetchAdmins();
     } catch (err) {
       console.error(err);
-      setSnackbar({ 
-        open: true, 
-        message: err.response?.data?.msg || 'Failed to update admin', 
-        severity: 'error' 
-      });
+      addSnackbar(err.response?.data?.msg || 'Failed to update admin', 'error');
     }
   };
 
@@ -496,19 +612,13 @@ const AdminDashboard = () => {
   };
 
   const handleDeleteSession = async (sessionId) => {
-    if (!window.confirm('Are you sure you want to delete this test session?')) {
-      return;
-    }
-    try {
-      await axios.delete(`/api/admin/session/${sessionId}`, {
-        withCredentials: true
-      });
-      await fetchSessions();
-      alert('Test session deleted successfully');
-    } catch (err) {
-      console.error(err);
-      alert('Failed to delete test session');
-    }
+    const session = sessions.find(s => s._id === sessionId);
+    setDeleteConfirmDialog({
+      open: true,
+      type: 'session',
+      id: sessionId,
+      name: session?.name || 'this test session'
+    });
   };
 
   const handleProgramToggle = (programId) => {
@@ -732,6 +842,7 @@ const AdminDashboard = () => {
                       />
                     </TableCell>
                     <TableCell sx={{ fontWeight: 600 }}>Username</TableCell>
+                    <TableCell sx={{ fontWeight: 600 }}>Test</TableCell>
                     <TableCell sx={{ fontWeight: 600 }}>Problem Title</TableCell>
                     <TableCell sx={{ fontWeight: 600 }}>Status</TableCell>
                     <TableCell sx={{ fontWeight: 600 }}>Score</TableCell>
@@ -742,7 +853,7 @@ const AdminDashboard = () => {
                 <TableBody>
                   {candidates.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={7} align="center" sx={{ py: 4 }}>
+                      <TableCell colSpan={8} align="center" sx={{ py: 4 }}>
                         <Typography color="text.secondary">No candidates created yet</Typography>
                       </TableCell>
                     </TableRow>
@@ -765,6 +876,13 @@ const AdminDashboard = () => {
                           />
                         </TableCell>
                         <TableCell onClick={() => candidate.testStatus === 'completed' && handleViewSolution(candidate._id)}>{candidate.username}</TableCell>
+                        <TableCell onClick={() => candidate.testStatus === 'completed' && handleViewSolution(candidate._id)}>
+                          {candidate.assignedTest?.name ? (
+                            <Chip label={candidate.assignedTest.name} size="small" color="secondary" variant="outlined" />
+                          ) : (
+                            <Typography variant="body2" color="text.secondary">Not assigned</Typography>
+                          )}
+                        </TableCell>
                         <TableCell onClick={() => candidate.testStatus === 'completed' && handleViewSolution(candidate._id)}>
                           {candidate.assignedProgram?.title ? (
                             <Chip label={candidate.assignedProgram.title} size="small" color="primary" variant="outlined" />
@@ -790,6 +908,17 @@ const AdminDashboard = () => {
                           <Typography variant="body2" color="text.secondary">-</Typography>
                         </TableCell>
                         <TableCell>
+                          <IconButton 
+                            size="small" 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleEditCandidate(candidate);
+                            }}
+                            color="primary"
+                            sx={{ mr: 1 }}
+                          >
+                            <EditIcon fontSize="small" />
+                          </IconButton>
                           <IconButton 
                             size="small" 
                             onClick={(e) => {
@@ -1004,6 +1133,7 @@ const AdminDashboard = () => {
             value={candidateUsername}
             onChange={e => setCandidateUsername(e.target.value)}
             disabled={!!candidateFile}
+            required
           />
           <TextField
             label="Password"
@@ -1013,14 +1143,32 @@ const AdminDashboard = () => {
             value={candidatePassword}
             onChange={e => setCandidatePassword(e.target.value)}
             disabled={!!candidateFile}
+            required
           />
+          <FormControl fullWidth margin="normal" disabled={!!candidateFile} required>
+            <InputLabel>Test</InputLabel>
+            <Select
+              value={candidateTestSession}
+              onChange={e => setCandidateTestSession(e.target.value)}
+              label="Test"
+            >
+              {sessions.map((session) => (
+                <MenuItem key={session._id} value={session._id}>
+                  {session.name}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
           
           <Box sx={{ mt: 3, mb: 2 }}>
             <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 600 }}>
               Or Upload Candidates (Excel/CSV File)
             </Typography>
             <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
-              Required columns: <strong>username</strong>, <strong>password</strong>
+              Required columns: <strong>username</strong>, <strong>password</strong>, <strong>Test</strong>
+            </Typography>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
+              Note: Test column should match Test names (case insensitive)
             </Typography>
             <Button
               variant="outlined"
@@ -1046,6 +1194,38 @@ const AdminDashboard = () => {
         <DialogActions>
           <Button onClick={() => setOpenCandidateDialog(false)}>Cancel</Button>
           <Button onClick={handleCreateCandidate} variant="contained">Create</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Edit Candidate Dialog */}
+      <Dialog open={openEditCandidateDialog} onClose={() => setOpenEditCandidateDialog(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Edit Candidate</DialogTitle>
+        <DialogContent>
+          <TextField
+            label="Username"
+            fullWidth
+            margin="normal"
+            value={editingCandidate?.username || ''}
+            disabled
+          />
+          <FormControl fullWidth margin="normal" required>
+            <InputLabel>Test</InputLabel>
+            <Select
+              value={editCandidateTestSession}
+              onChange={e => setEditCandidateTestSession(e.target.value)}
+              label="Test"
+            >
+              {sessions.map((session) => (
+                <MenuItem key={session._id} value={session._id}>
+                  {session.name}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setOpenEditCandidateDialog(false)}>Cancel</Button>
+          <Button onClick={handleUpdateCandidate} variant="contained">Update</Button>
         </DialogActions>
       </Dialog>
 
@@ -1343,17 +1523,42 @@ const AdminDashboard = () => {
         </DialogActions>
       </Dialog>
 
-      {/* Snackbar for notifications */}
-      <Snackbar
-        open={snackbar.open}
-        autoHideDuration={4000}
-        onClose={handleCloseSnackbar}
-        anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+      {/* Single Delete Confirmation Dialog */}
+      <Dialog
+        open={deleteConfirmDialog.open}
+        onClose={() => setDeleteConfirmDialog({ open: false, type: '', id: null, name: '' })}
       >
-        <Alert onClose={handleCloseSnackbar} severity={snackbar.severity} sx={{ width: '100%' }}>
-          {snackbar.message}
-        </Alert>
-      </Snackbar>
+        <DialogTitle>Confirm Deletion</DialogTitle>
+        <DialogContent>
+          <Typography>
+            Are you sure you want to delete {deleteConfirmDialog.name}?
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteConfirmDialog({ open: false, type: '', id: null, name: '' })}>
+            Cancel
+          </Button>
+          <Button onClick={confirmDelete} variant="contained" color="error">
+            Delete
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Stacked Snackbars for notifications */}
+      {snackbars.map((snackbar, index) => (
+        <Snackbar
+          key={snackbar.id}
+          open={true}
+          autoHideDuration={4000}
+          onClose={() => removeSnackbar(snackbar.id)}
+          anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+          sx={{ top: `${24 + index * 70}px !important` }}
+        >
+          <Alert onClose={() => removeSnackbar(snackbar.id)} severity={snackbar.severity} sx={{ width: '100%' }}>
+            {snackbar.message}
+          </Alert>
+        </Snackbar>
+      ))}
     </Box>
   );
 };

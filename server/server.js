@@ -55,4 +55,4 @@ app.use('/api/candidate', require('./routes/candidate'));
 
 const PORT = process.env.PORT || 5001;
 
-app.listen(PORT, '0.0.0.0', () => console.log(`Server started on port ${PORT}`));
+app.listen(PORT, 'localhost', () => console.log(`Server started on port ${PORT}`));
