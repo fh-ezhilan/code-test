@@ -14,9 +14,17 @@ router.post('/session', isAdmin, upload.single('programsFile'), adminController.
 router.put('/session/:id', isAdmin, adminController.updateTestSession);
 router.delete('/session/:id', isAdmin, adminController.deleteTestSession);
 router.post('/candidate', isAdmin, adminController.createCandidate);
+router.post('/candidates/bulk', isAdmin, upload.single('candidatesFile'), adminController.bulkCreateCandidates);
 router.get('/candidates', isAdmin, adminController.getCandidates);
 router.delete('/candidate/:id', isAdmin, adminController.deleteCandidate);
 router.get('/candidate/:id/solution', isAdmin, adminController.getCandidateSolution);
 router.get('/sessions', isAdmin, adminController.getSessions);
+
+// Admin user management routes
+router.get('/admins', isAdmin, adminController.getAdmins);
+router.post('/admin', isAdmin, adminController.createAdmin);
+router.post('/admins/bulk', isAdmin, upload.single('adminsFile'), adminController.bulkCreateAdmins);
+router.put('/admin/:id', isAdmin, adminController.updateAdmin);
+router.delete('/admin/:id', isAdmin, adminController.deleteAdmin);
 
 module.exports = router;
