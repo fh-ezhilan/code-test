@@ -211,18 +211,18 @@ exports.bulkCreateCandidates = async (req, res) => {
         continue;
       }
 
-      if (!row.Test) {
-        console.log('Skipping row due to missing Test:', row);
+      if (!row.test) {
+        console.log('Skipping row due to missing test:', row);
         errors.push(`User ${row.username}: Test name is required`);
         skipped++;
         continue;
       }
 
       // Find test session by name (case insensitive)
-      const testSessionId = testSessionMap[row.Test.toLowerCase()];
+      const testSessionId = testSessionMap[row.test.toLowerCase()];
       if (!testSessionId) {
-        console.log('Skipping row due to test name not found:', row.Test);
-        errors.push(`User ${row.username}: Test "${row.Test}" not found`);
+        console.log('Skipping row due to test name not found:', row.test);
+        errors.push(`User ${row.username}: Test "${row.test}" not found`);
         skipped++;
         continue;
       }
@@ -331,8 +331,11 @@ exports.updateCandidate = async (req, res) => {
         return res.status(400).json({ msg: 'Test session not found' });
       }
       candidate.assignedTest = testSessionId;
-      // Reset assigned program since test changed
+      // Reset assigned program and test timing since test changed
       candidate.assignedProgram = null;
+      candidate.testStatus = 'not-started';
+      candidate.testStartTime = null;
+      candidate.testDuration = null;
     }
 
     await candidate.save();

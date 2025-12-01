@@ -52,13 +52,25 @@ exports.login = (req, res, next) => {
   })(req, res, next);
 };
 
-exports.logout = (req, res) => {
-  req.logout((err) => {
-    if (err) {
-      return res.status(500).json({ msg: 'Logout failed' });
+exports.logout = async (req, res) => {
+  try {
+    // If user was in the middle of a test, mark it as completed
+    if (req.user && req.user.testStatus === 'in-progress') {
+      await User.findByIdAndUpdate(req.user.id, {
+        testStatus: 'completed'
+      });
     }
-    res.json({ msg: 'Logged out successfully' });
-  });
+
+    req.logout((err) => {
+      if (err) {
+        return res.status(500).json({ msg: 'Logout failed' });
+      }
+      res.json({ msg: 'Logged out successfully' });
+    });
+  } catch (error) {
+    console.error('Logout error:', error);
+    res.status(500).json({ msg: 'Logout failed' });
+  }
 };
 
 exports.getCurrentUser = (req, res) => {

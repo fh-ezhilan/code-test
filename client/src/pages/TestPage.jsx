@@ -37,6 +37,7 @@ const TestPage = () => {
   const [isResizing, setIsResizing] = useState(false);
   const [bottomPanelHeight, setBottomPanelHeight] = useState(35);
   const [isResizingVertical, setIsResizingVertical] = useState(false);
+  const [timeRemaining, setTimeRemaining] = useState(null); // Time in seconds
   const editorRef = useRef(null);
   const navigate = useNavigate();
   const { logout, user } = useAuth();
@@ -44,6 +45,33 @@ const TestPage = () => {
   const handleLogout = async () => {
     await logout();
     navigate('/login');
+  };
+
+  // Format time for display (HH:MM:SS)
+  const formatTime = (seconds) => {
+    if (seconds === null) return '--:--:--';
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = seconds % 60;
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+  };
+
+  // Auto-submit when timer expires
+  const autoSubmit = async () => {
+    if (editorRef.current && program) {
+      const currentCode = editorRef.current.getValue();
+      try {
+        await axios.post('/api/candidate/test/submit', {
+          programId: program._id,
+          code: currentCode,
+          language,
+        }, { withCredentials: true });
+        navigate('/test-completed');
+      } catch (err) {
+        console.error('Auto-submit error:', err);
+        navigate('/test-completed');
+      }
+    }
   };
 
   // Check if user has completed the test
@@ -131,6 +159,23 @@ const TestPage = () => {
       try {
         const res = await axios.get('/api/candidate/test/program', { withCredentials: true });
         setProgram(res.data);
+        
+        // Calculate time remaining
+        if (res.data.testStartTime && res.data.testDuration) {
+          const startTime = new Date(res.data.testStartTime).getTime();
+          const durationMs = res.data.testDuration * 60 * 1000; // Convert minutes to milliseconds
+          const endTime = startTime + durationMs;
+          const now = Date.now();
+          const remaining = Math.max(0, Math.floor((endTime - now) / 1000)); // Convert to seconds
+          
+          setTimeRemaining(remaining);
+          
+          // If time already expired, auto-submit immediately
+          if (remaining <= 0) {
+            autoSubmit();
+          }
+        }
+        
         // Set initial code based on language
         setCode(getInitialCode(language));
       } catch (err) {
@@ -170,6 +215,24 @@ const TestPage = () => {
 
     return () => clearInterval(autoSave);
   }, []);
+
+  // Timer countdown effect
+  useEffect(() => {
+    if (timeRemaining === null || timeRemaining <= 0) return;
+
+    const timer = setInterval(() => {
+      setTimeRemaining(prev => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          autoSubmit();
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [timeRemaining]);
 
   const handleLanguageChange = (event) => {
     const newLanguage = event.target.value;
@@ -217,7 +280,27 @@ const TestPage = () => {
         <Typography sx={{ color: '#000', fontWeight: 500 }}>
           Code Editor
         </Typography>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+          {timeRemaining !== null && (
+            <Box sx={{ 
+              display: 'flex', 
+              alignItems: 'center',
+              bgcolor: timeRemaining < 300 ? '#ffebee' : '#e3f2fd',
+              px: 2,
+              py: 0.5,
+              borderRadius: 1,
+              border: `1px solid ${timeRemaining < 300 ? '#f44336' : '#2196f3'}`
+            }}>
+              <Typography sx={{ 
+                color: timeRemaining < 300 ? '#d32f2f' : '#1976d2',
+                fontWeight: 600,
+                fontSize: '14px',
+                fontFamily: 'monospace'
+              }}>
+                ⏱ {formatTime(timeRemaining)}
+              </Typography>
+            </Box>
+          )}
           <Button 
             variant="contained" 
             size="small"

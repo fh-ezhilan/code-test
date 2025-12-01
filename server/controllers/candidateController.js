@@ -4,12 +4,18 @@ const Solution = require('../models/Solution');
 
 exports.getTestInstructions = async (req, res) => {
   try {
-    // Assuming there is an active test session for the candidate
-    // This logic needs to be more sophisticated based on your application flow
-    const testSession = await TestSession.findOne().sort({ _id: -1 });
-    if (!testSession) {
-      return res.status(404).json({ msg: 'No active test session found' });
+    const User = require('../models/User');
+    const user = await User.findById(req.user.id);
+    
+    if (!user || !user.assignedTest) {
+      return res.status(404).json({ msg: 'No test assigned to this candidate' });
     }
+    
+    const testSession = await TestSession.findById(user.assignedTest);
+    if (!testSession) {
+      return res.status(404).json({ msg: 'Assigned test session not found' });
+    }
+    
     res.json({
       name: testSession.name,
       duration: testSession.duration,
@@ -29,7 +35,11 @@ exports.getTestProgram = async (req, res) => {
     // If user already has an assigned program, return it
     if (user.assignedProgram) {
       const program = await Program.findById(user.assignedProgram);
-      return res.json(program);
+      return res.json({
+        ...program.toObject(),
+        testStartTime: user.testStartTime,
+        testDuration: user.testDuration
+      });
     }
     
     // Check if user has an assigned test
@@ -57,7 +67,11 @@ exports.getTestProgram = async (req, res) => {
     user.assignedProgram = randomProgram;
     await user.save();
     
-    res.json(program);
+    res.json({
+      ...program.toObject(),
+      testStartTime: user.testStartTime,
+      testDuration: user.testDuration
+    });
   } catch (err) {
     console.error(err.message);
     res.status(500).send('Server Error');
@@ -89,8 +103,30 @@ exports.submitSolution = async (req, res) => {
 exports.startTest = async (req, res) => {
   try {
     const User = require('../models/User');
-    await User.findByIdAndUpdate(req.user.id, { testStatus: 'in-progress' });
-    res.json({ msg: 'Test started' });
+    const user = await User.findById(req.user.id);
+    
+    if (!user.assignedTest) {
+      return res.status(400).json({ msg: 'No test assigned' });
+    }
+    
+    // Get test duration
+    const testSession = await TestSession.findById(user.assignedTest);
+    if (!testSession) {
+      return res.status(404).json({ msg: 'Test session not found' });
+    }
+    
+    // Update user with test start time and duration
+    await User.findByIdAndUpdate(req.user.id, { 
+      testStatus: 'in-progress',
+      testStartTime: new Date(),
+      testDuration: testSession.duration
+    });
+    
+    res.json({ 
+      msg: 'Test started',
+      startTime: new Date(),
+      duration: testSession.duration
+    });
   } catch (err) {
     console.error(err.message);
     res.status(500).send('Server Error');

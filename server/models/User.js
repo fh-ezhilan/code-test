@@ -30,6 +30,14 @@ const UserSchema = new mongoose.Schema({
     enum: ['not-started', 'in-progress', 'completed'],
     default: 'not-started',
   },
+  testStartTime: {
+    type: Date,
+    default: null,
+  },
+  testDuration: {
+    type: Number, // Duration in minutes
+    default: null,
+  },
 });
 
 module.exports = mongoose.model('User', UserSchema);

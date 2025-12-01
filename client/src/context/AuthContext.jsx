@@ -34,6 +34,8 @@ export const AuthProvider = ({ children }) => {
       setUser(null);
     } catch (error) {
       console.error('Logout error:', error);
+      // Even if logout fails on server, clear user state
+      setUser(null);
     }
   };
 

@@ -1165,10 +1165,10 @@ const AdminDashboard = () => {
               Or Upload Candidates (Excel/CSV File)
             </Typography>
             <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
-              Required columns: <strong>username</strong>, <strong>password</strong>, <strong>Test</strong>
+              Required columns: <strong>username</strong>, <strong>password</strong>, <strong>test</strong>
             </Typography>
             <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
-              Note: Test column should match Test names (case insensitive)
+              Note: test column should match Test names (case insensitive)
             </Typography>
             <Button
               variant="outlined"
