@@ -38,6 +38,8 @@ const TestPage = () => {
   const [bottomPanelHeight, setBottomPanelHeight] = useState(35);
   const [isResizingVertical, setIsResizingVertical] = useState(false);
   const [timeRemaining, setTimeRemaining] = useState(null); // Time in seconds
+  const [testResult, setTestResult] = useState(null);
+  const [isRunning, setIsRunning] = useState(false);
   const editorRef = useRef(null);
   const navigate = useNavigate();
   const { logout, user } = useAuth();
@@ -238,6 +240,40 @@ const TestPage = () => {
     const newLanguage = event.target.value;
     setLanguage(newLanguage);
     setCode(getInitialCode(newLanguage));
+  };
+
+  const handleRun = async () => {
+    if (editorRef.current) {
+      const currentCode = editorRef.current.getValue();
+      setIsRunning(true);
+      setBottomTab(1); // Switch to Test Result tab
+      setTestResult(null);
+      
+      try {
+        const res = await axios.post('/api/candidate/test/run', {
+          code: currentCode,
+          language,
+          input: '' // Can be extended to accept custom input
+        }, { withCredentials: true });
+        
+        setTestResult({
+          success: true,
+          output: res.data.stdout || '',
+          error: res.data.stderr || res.data.compile_output || '',
+          status: res.data.status,
+          time: res.data.time,
+          memory: res.data.memory
+        });
+      } catch (err) {
+        console.error('Run error:', err);
+        setTestResult({
+          success: false,
+          error: err.response?.data?.error || err.message || 'Failed to run code'
+        });
+      } finally {
+        setIsRunning(false);
+      }
+    }
   };
 
   const handleSubmit = async () => {
@@ -530,9 +566,86 @@ const TestPage = () => {
                 </Box>
               )}
               {bottomTab === 1 && (
-                <Typography sx={{ color: '#666', fontSize: '13px' }}>
-                  You must run your code first.
-                </Typography>
+                <Box>
+                  {isRunning && (
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <CircularProgress size={16} />
+                      <Typography sx={{ color: '#666', fontSize: '13px' }}>
+                        Running your code...
+                      </Typography>
+                    </Box>
+                  )}
+                  
+                  {!isRunning && !testResult && (
+                    <Typography sx={{ color: '#666', fontSize: '13px' }}>
+                      You must run your code first.
+                    </Typography>
+                  )}
+                  
+                  {!isRunning && testResult && (
+                    <Box>
+                      <Box sx={{ mb: 2 }}>
+                        <Typography sx={{ 
+                          color: testResult.success ? '#2e7d32' : '#d32f2f',
+                          fontSize: '13px',
+                          fontWeight: 600,
+                          mb: 1
+                        }}>
+                          Status: {testResult.status || (testResult.success ? 'Success' : 'Error')}
+                        </Typography>
+                        {testResult.time && (
+                          <Typography sx={{ color: '#666', fontSize: '12px' }}>
+                            Time: {testResult.time}s | Memory: {testResult.memory}KB
+                          </Typography>
+                        )}
+                      </Box>
+                      
+                      {testResult.output && (
+                        <Box sx={{ mb: 2 }}>
+                          <Typography sx={{ color: '#333', fontSize: '13px', fontWeight: 600, mb: 0.5 }}>
+                            Output:
+                          </Typography>
+                          <Box sx={{ 
+                            bgcolor: '#f5f5f5', 
+                            p: 2, 
+                            borderRadius: 1,
+                            border: '1px solid #e0e0e0',
+                            fontFamily: 'monospace',
+                            fontSize: '13px',
+                            color: '#000',
+                            whiteSpace: 'pre-wrap',
+                            maxHeight: '200px',
+                            overflow: 'auto'
+                          }}>
+                            {testResult.output}
+                          </Box>
+                        </Box>
+                      )}
+                      
+                      {testResult.error && (
+                        <Box>
+                          <Typography sx={{ color: '#d32f2f', fontSize: '13px', fontWeight: 600, mb: 0.5 }}>
+                            Error:
+                          </Typography>
+                          <Box sx={{ 
+                            bgcolor: '#ffebee', 
+                            p: 2, 
+                            borderRadius: 1,
+                            border: '1px solid #ef5350',
+                            fontFamily: 'monospace',
+                            fontSize: '13px',
+                            color: '#c62828',
+                            whiteSpace: 'pre-wrap',
+                            maxHeight: '200px',
+                            overflow: 'auto'
+                          }}>
+                            {testResult.error}
+                          </Box>
+                        </Box>
+                      )}
+                    </Box>
+                  )}
+                </Box>
               )}
             </Box>
 
@@ -547,7 +660,9 @@ const TestPage = () => {
             }}>
               <Button
                 variant="outlined"
-                startIcon={<RunIcon />}
+                startIcon={isRunning ? <CircularProgress size={16} /> : <RunIcon />}
+                onClick={handleRun}
+                disabled={isRunning}
                 sx={{
                   color: '#000',
                   borderColor: '#d0d0d0',
@@ -555,6 +670,10 @@ const TestPage = () => {
                   '&:hover': {
                     borderColor: '#000',
                     bgcolor: 'rgba(0,0,0,0.05)'
+                  },
+                  '&:disabled': {
+                    color: '#999',
+                    borderColor: '#e0e0e0'
                   }
                 }}
               >

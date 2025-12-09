@@ -132,3 +132,58 @@ exports.startTest = async (req, res) => {
     res.status(500).send('Server Error');
   }
 };
+
+exports.runCode = async (req, res) => {
+  const { code, language, input } = req.body;
+  
+  try {
+    const axios = require('axios');
+    
+    // Language ID mapping for Judge0
+    const languageMap = {
+      'javascript': 63,  // Node.js
+      'python': 71,      // Python 3
+      'java': 62         // Java
+    };
+    
+    const languageId = languageMap[language];
+    if (!languageId) {
+      return res.status(400).json({ msg: 'Unsupported language' });
+    }
+    
+    // Submit code to Judge0
+    const submissionResponse = await axios.post(
+      `${process.env.JUDGE0_API_URL}/submissions?base64_encoded=false&wait=true`,
+      {
+        source_code: code,
+        language_id: languageId,
+        stdin: input || '',
+      },
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          'X-RapidAPI-Key': process.env.JUDGE0_API_KEY || '',
+          'X-RapidAPI-Host': 'judge0-ce.p.rapidapi.com'
+        }
+      }
+    );
+    
+    const result = submissionResponse.data;
+    
+    res.json({
+      stdout: result.stdout || '',
+      stderr: result.stderr || '',
+      compile_output: result.compile_output || '',
+      status: result.status?.description || 'Unknown',
+      time: result.time,
+      memory: result.memory
+    });
+    
+  } catch (err) {
+    console.error('Code execution error:', err.message);
+    res.status(500).json({ 
+      msg: 'Code execution failed',
+      error: err.response?.data || err.message 
+    });
+  }
+};

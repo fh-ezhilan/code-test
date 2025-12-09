@@ -6,6 +6,7 @@ const { isCandidate } = require('../middleware/authMiddleware');
 router.get('/test/instructions', isCandidate, candidateController.getTestInstructions);
 router.get('/test/program', isCandidate, candidateController.getTestProgram);
 router.post('/test/start', isCandidate, candidateController.startTest);
+router.post('/test/run', isCandidate, candidateController.runCode);
 router.post('/test/submit', isCandidate, candidateController.submitSolution);
 
 module.exports = router;
