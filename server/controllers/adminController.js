@@ -1,4 +1,6 @@
 const Program = require('../models/Program');
+const MCQQuestion = require('../models/MCQQuestion');
+const MCQAnswer = require('../models/MCQAnswer');
 const TestSession = require('../models/TestSession');
 const User = require('../models/User');
 const bcrypt = require('bcryptjs');
@@ -49,10 +51,13 @@ exports.updateProgram = async (req, res) => {
 
 exports.createTestSession = async (req, res) => {
   try {
-    const { name, duration } = req.body;
+    const { name, duration, testType = 'Coding' } = req.body;
+    console.log('Received testType:', testType);
+    console.log('Request body:', req.body);
     let programIds = [];
+    let mcqQuestionIds = [];
 
-    // If Excel/CSV file is uploaded, parse and create programs
+    // If Excel/CSV file is uploaded, parse and create programs or MCQ questions
     if (req.file) {
       try {
         // Read the file - xlsx library supports both Excel and CSV
@@ -67,41 +72,68 @@ exports.createTestSession = async (req, res) => {
           return res.status(400).json({ msg: 'File is empty or has no valid data' });
         }
 
-        // Create programs from Excel/CSV data
-        for (const row of data) {
-          if (!row.Title || !row.Description) {
-            console.log('Skipping row due to missing Title or Description:', row);
-            continue; // Skip rows without required fields
-          }
-
-          // Handle TestCases - can be JSON string, plain text, or empty
-          let testCases = [];
-          if (row.TestCases) {
-            try {
-              // Try to parse as JSON first
-              testCases = JSON.parse(row.TestCases);
-            } catch (e) {
-              // If not valid JSON, store as plain text in description
-              // Don't create test case objects from plain text
-              console.log('TestCases is plain text, skipping:', row.TestCases);
+        if (testType === 'Coding') {
+          // Validate and create coding programs
+          for (const row of data) {
+            if (!row.Title || !row.Description) {
+              console.log('Skipping row due to missing Title or Description:', row);
+              continue; // Skip rows without required fields
             }
+
+            // Handle TestCases - can be JSON string, plain text, or empty
+            let testCases = [];
+            if (row.TestCases) {
+              try {
+                // Try to parse as JSON first
+                testCases = JSON.parse(row.TestCases);
+              } catch (e) {
+                // If not valid JSON, store as plain text in description
+                console.log('TestCases is plain text, skipping:', row.TestCases);
+              }
+            }
+
+            const newProgram = new Program({
+              title: row.Title,
+              description: row.Description,
+              testCases: testCases,
+            });
+            const savedProgram = await newProgram.save();
+            programIds.push(savedProgram._id);
+            console.log('Created program:', savedProgram.title);
           }
+          console.log(`Successfully created ${programIds.length} programs`);
+        } else if (testType === 'MCQ') {
+          // Validate and create MCQ questions
+          for (const row of data) {
+            if (!row.Question || !row.Option1 || !row.Option2 || !row.Option3 || !row.Option4 || !row.CorrectOption) {
+              console.log('Skipping row due to missing required fields:', row);
+              continue; // Skip rows without required fields
+            }
 
-          const newProgram = new Program({
-            title: row.Title,
-            description: row.Description,
-            testCases: testCases,
-          });
-          const savedProgram = await newProgram.save();
-          programIds.push(savedProgram._id);
-          console.log('Created program:', savedProgram.title);
+            const correctOption = parseInt(row.CorrectOption);
+            if (isNaN(correctOption) || correctOption < 1 || correctOption > 4) {
+              console.log('Skipping row due to invalid CorrectOption:', row);
+              continue;
+            }
+
+            const newMCQQuestion = new MCQQuestion({
+              question: row.Question,
+              options: [row.Option1, row.Option2, row.Option3, row.Option4],
+              correctOption: correctOption,
+            });
+            const savedQuestion = await newMCQQuestion.save();
+            mcqQuestionIds.push(savedQuestion._id);
+            console.log('Created MCQ question:', savedQuestion.question);
+          }
+          console.log(`Successfully created ${mcqQuestionIds.length} MCQ questions`);
         }
-
-        console.log(`Successfully created ${programIds.length} programs`);
       } catch (parseErr) {
         console.error('Error parsing file:', parseErr);
+        const errorMsg = testType === 'Coding' 
+          ? 'Invalid file format. Ensure columns are: Title, Description, TestCases'
+          : 'Invalid file format. Ensure columns are: Question, Option1, Option2, Option3, Option4, CorrectOption';
         return res.status(400).json({ 
-          msg: 'Invalid file format. Ensure columns are: Title, Description, TestCases',
+          msg: errorMsg,
           error: parseErr.message 
         });
       }
@@ -109,7 +141,9 @@ exports.createTestSession = async (req, res) => {
 
     const newTestSession = new TestSession({
       name,
+      testType,
       programs: programIds,
+      mcqQuestions: mcqQuestionIds,
       duration,
       createdBy: req.user.id,
     });
@@ -122,13 +156,14 @@ exports.createTestSession = async (req, res) => {
 };
 
 exports.updateTestSession = async (req, res) => {
-  const { name, duration, programs } = req.body;
+  const { name, testType, duration, programs } = req.body;
   try {
     let testSession = await TestSession.findById(req.params.id);
     if (!testSession) {
       return res.status(404).json({ msg: 'Test session not found' });
     }
     if (name !== undefined) testSession.name = name;
+    if (testType !== undefined) testSession.testType = testType;
     if (duration !== undefined) testSession.duration = duration;
     if (programs !== undefined) testSession.programs = programs;
     await testSession.save();
@@ -199,58 +234,66 @@ exports.bulkCreateCandidates = async (req, res) => {
     const testSessions = await TestSession.find();
     const testSessionMap = {};
     testSessions.forEach(session => {
-      testSessionMap[session.name.toLowerCase()] = session._id;
+      const key = `${(session.testType || 'Coding').toLowerCase()}_${session.name.toLowerCase()}`;
+      testSessionMap[key] = session._id;
     });
 
     // Create candidates from Excel/CSV data
     for (const row of data) {
-      if (!row.username || !row.password) {
+      // Check for new format (Username, Password, TestType, TestName)
+      const username = row.Username || row.username;
+      const password = row.Password || row.password;
+      const testType = row.TestType || row.testType || 'Coding';
+      const testName = row.TestName || row.testName || row.test;
+
+      if (!username || !password) {
         console.log('Skipping row due to missing username or password:', row);
-        errors.push(`Row with username ${row.username || 'N/A'} is missing required fields`);
+        errors.push(`Row with username ${username || 'N/A'} is missing required fields`);
         skipped++;
         continue;
       }
 
-      if (!row.test) {
-        console.log('Skipping row due to missing test:', row);
-        errors.push(`User ${row.username}: Test name is required`);
+      if (!testName) {
+        console.log('Skipping row due to missing test name:', row);
+        errors.push(`User ${username}: Test name is required`);
         skipped++;
         continue;
       }
 
-      // Find test session by name (case insensitive)
-      const testSessionId = testSessionMap[row.test.toLowerCase()];
+      // Find test session by type and name (case insensitive)
+      const testKey = `${testType.toLowerCase()}_${testName.toLowerCase()}`;
+      const testSessionId = testSessionMap[testKey];
       if (!testSessionId) {
-        console.log('Skipping row due to test name not found:', row.test);
-        errors.push(`User ${row.username}: Test "${row.test}" not found`);
+        console.log('Skipping row due to test not found:', testType, testName);
+        errors.push(`User ${username}: Test "${testName}" of type "${testType}" not found`);
         skipped++;
         continue;
       }
 
       try {
         // Check if user already exists
-        let user = await User.findOne({ username: row.username });
+        let user = await User.findOne({ username: username });
         if (user) {
-          console.log('User already exists:', row.username);
-          errors.push(`User ${row.username} already exists`);
+          console.log('User already exists:', username);
+          errors.push(`User ${username} already exists`);
           skipped++;
           continue;
         }
 
         user = new User({
-          username: row.username,
-          password: row.password,
+          username: username,
+          password: password,
           role: 'candidate',
           assignedTest: testSessionId,
         });
         const salt = await bcrypt.genSalt(10);
-        user.password = await bcrypt.hash(row.password, salt);
+        user.password = await bcrypt.hash(password, salt);
         await user.save();
         created++;
-        console.log('Created candidate:', row.username);
+        console.log('Created candidate:', username);
       } catch (err) {
-        console.error('Error creating candidate:', row.username, err.message);
-        errors.push(`Failed to create ${row.username}: ${err.message}`);
+        console.error('Error creating candidate:', username, err.message);
+        errors.push(`Failed to create ${username}: ${err.message}`);
         skipped++;
       }
     }
@@ -274,8 +317,27 @@ exports.getCandidates = async (req, res) => {
     const candidates = await User.find({ role: 'candidate' })
       .select('-password')
       .populate('assignedProgram', 'title')
-      .populate('assignedTest', 'name');
-    res.json(candidates);
+      .populate('assignedTest', 'name testType');
+    
+    // Fetch MCQ answers for each candidate
+    const candidatesWithScores = await Promise.all(
+      candidates.map(async (candidate) => {
+        const candidateObj = candidate.toObject();
+        
+        // If the candidate completed an MCQ test, fetch their score
+        if (candidate.testStatus === 'completed' && candidate.assignedTest?.testType === 'MCQ') {
+          const mcqAnswer = await MCQAnswer.findOne({ candidate: candidate._id });
+          if (mcqAnswer) {
+            candidateObj.mcqScore = mcqAnswer.score;
+            candidateObj.mcqTotalQuestions = mcqAnswer.totalQuestions;
+          }
+        }
+        
+        return candidateObj;
+      })
+    );
+    
+    res.json(candidatesWithScores);
   } catch (err) {
     console.error(err.message);
     res.status(500).send('Server Error');
@@ -284,7 +346,7 @@ exports.getCandidates = async (req, res) => {
 
 exports.getSessions = async (req, res) => {
   try {
-    const sessions = await TestSession.find().populate('programs');
+    const sessions = await TestSession.find().populate('programs').populate('mcqQuestions');
     res.json(sessions);
   } catch (err) {
     console.error(err.message);

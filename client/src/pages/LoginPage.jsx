@@ -35,6 +35,20 @@ const LoginPage = () => {
         // Check if candidate has completed the test
         if (user.testStatus === 'completed') {
           navigate('/test-completed');
+        } else if (user.testStatus === 'in-progress') {
+          // If test is already in progress, route to the appropriate test page
+          // Fetch test instructions to determine test type
+          try {
+            const testRes = await axios.get('/api/candidate/test/instructions', { withCredentials: true });
+            if (testRes.data.testType === 'MCQ') {
+              navigate('/test/mcq');
+            } else {
+              navigate('/test');
+            }
+          } catch (err) {
+            // Fallback to instructions page if error
+            navigate('/test/instructions');
+          }
         } else {
           navigate('/test/instructions');
         }

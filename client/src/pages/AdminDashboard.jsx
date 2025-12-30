@@ -69,16 +69,21 @@ const AdminDashboard = () => {
   
   // Test Session States
   const [sessionName, setSessionName] = useState('');
+  const [testType, setTestType] = useState('Coding');
   const [sessionDuration, setSessionDuration] = useState(60);
   const [sessions, setSessions] = useState([]);
   const [excelFile, setExcelFile] = useState(null);
   
   // Program States
   const [programs, setPrograms] = useState([]);
+  const [mcqQuestions, setMcqQuestions] = useState([]);
+  const [selectedMcqQuestions, setSelectedMcqQuestions] = useState([]);
+  const [expandedMcqQuestion, setExpandedMcqQuestion] = useState(null);
   
   // Candidate States
   const [candidateUsername, setCandidateUsername] = useState('');
   const [candidatePassword, setCandidatePassword] = useState('');
+  const [candidateTestType, setCandidateTestType] = useState('');
   const [candidateTestSession, setCandidateTestSession] = useState('');
   const [candidates, setCandidates] = useState([]);
   const [candidateFile, setCandidateFile] = useState(null);
@@ -89,6 +94,7 @@ const AdminDashboard = () => {
   const [snackbars, setSnackbars] = useState([]);
   const [editingCandidate, setEditingCandidate] = useState(null);
   const [openEditCandidateDialog, setOpenEditCandidateDialog] = useState(false);
+  const [editCandidateTestType, setEditCandidateTestType] = useState('');
   const [editCandidateTestSession, setEditCandidateTestSession] = useState('');
   
   // Delete confirmation states
@@ -165,6 +171,7 @@ const AdminDashboard = () => {
     try {
       const formData = new FormData();
       formData.append('name', sessionName);
+      formData.append('testType', testType);
       formData.append('duration', sessionDuration);
       if (excelFile) {
         formData.append('programsFile', excelFile);
@@ -177,6 +184,7 @@ const AdminDashboard = () => {
         }
       });
       setSessionName('');
+      setTestType('Coding');
       setSessionDuration(60);
       setExcelFile(null);
       setOpenTestDialog(false);
@@ -286,6 +294,7 @@ const AdminDashboard = () => {
       }
       setCandidateUsername('');
       setCandidatePassword('');
+      setCandidateTestType('');
       setCandidateTestSession('');
       setOpenCandidateDialog(false);
       fetchCandidates();
@@ -297,6 +306,8 @@ const AdminDashboard = () => {
 
   const handleEditCandidate = (candidate) => {
     setEditingCandidate(candidate);
+    const assignedTest = sessions.find(s => s._id === candidate.assignedTest?._id);
+    setEditCandidateTestType(assignedTest?.testType || 'Coding');
     setEditCandidateTestSession(candidate.assignedTest?._id || '');
     setOpenEditCandidateDialog(true);
   };
@@ -315,6 +326,7 @@ const AdminDashboard = () => {
       });
       setOpenEditCandidateDialog(false);
       setEditingCandidate(null);
+      setEditCandidateTestType('');
       setEditCandidateTestSession('');
       addSnackbar('Candidate updated successfully', 'success');
       fetchCandidates();
@@ -581,11 +593,20 @@ const AdminDashboard = () => {
   const handleEditSession = (session) => {
     setEditingSession(session);
     setSessionName(session.name);
+    setTestType(session.testType || 'Coding');
     setSessionDuration(session.duration);
-    setSelectedPrograms(session.programs.map(p => p._id || p));
-    // Set programs to only the session's programs instead of all programs
-    setPrograms(session.programs || []);
+    
+    if (session.testType === 'MCQ') {
+      setSelectedMcqQuestions(session.mcqQuestions?.map(q => q._id || q) || []);
+      setMcqQuestions(session.mcqQuestions || []);
+    } else {
+      setSelectedPrograms(session.programs.map(p => p._id || p));
+      // Set programs to only the session's programs instead of all programs
+      setPrograms(session.programs || []);
+    }
+    
     setExpandedProgram(null);
+    setExpandedMcqQuestion(null);
     setOpenEditDialog(true);
   };
 
@@ -593,6 +614,7 @@ const AdminDashboard = () => {
     try {
       await axios.put(`/api/admin/session/${editingSession._id}`, {
         name: sessionName,
+        testType: testType,
         duration: sessionDuration,
         programs: selectedPrograms,
       }, {
@@ -601,6 +623,7 @@ const AdminDashboard = () => {
       setOpenEditDialog(false);
       setEditingSession(null);
       setSessionName('');
+      setTestType('Coding');
       setSessionDuration(60);
       setSelectedPrograms([]);
       fetchSessions();
@@ -740,8 +763,9 @@ const AdminDashboard = () => {
                 <TableHead>
                   <TableRow sx={{ bgcolor: '#f8f9fa' }}>
                     <TableCell sx={{ fontWeight: 600 }}>Test</TableCell>
+                    <TableCell sx={{ fontWeight: 600 }}>Test Type</TableCell>
                     <TableCell sx={{ fontWeight: 600 }}>Duration</TableCell>
-                    <TableCell sx={{ fontWeight: 600 }}>Programs</TableCell>
+                    <TableCell sx={{ fontWeight: 600 }}>Questions</TableCell>
                     <TableCell sx={{ fontWeight: 600 }}>Status</TableCell>
                     <TableCell sx={{ fontWeight: 600 }}>Actions</TableCell>
                   </TableRow>
@@ -749,7 +773,7 @@ const AdminDashboard = () => {
                 <TableBody>
                   {sessions.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={5} align="center" sx={{ py: 4 }}>
+                      <TableCell colSpan={6} align="center" sx={{ py: 4 }}>
                         <Typography color="text.secondary">No tests created yet</Typography>
                       </TableCell>
                     </TableRow>
@@ -757,8 +781,21 @@ const AdminDashboard = () => {
                     sessions.map((session) => (
                       <TableRow key={session._id} hover>
                         <TableCell>{session.name}</TableCell>
+                        <TableCell>
+                          <Chip 
+                            label={session.testType || 'Coding'} 
+                            size="small" 
+                            color={session.testType === 'MCQ' ? 'secondary' : 'primary'}
+                            variant="outlined"
+                          />
+                        </TableCell>
                         <TableCell>{session.duration} mins</TableCell>
-                        <TableCell>{session.programs.length}</TableCell>
+                        <TableCell>
+                          {session.testType === 'MCQ' 
+                            ? (session.mcqQuestions?.length || 0)
+                            : (session.programs?.length || 0)
+                          }
+                        </TableCell>
                         <TableCell>
                           <Chip label="Active" size="small" color="success" />
                         </TableCell>
@@ -902,10 +939,24 @@ const AdminDashboard = () => {
                           )}
                         </TableCell>
                         <TableCell onClick={() => candidate.testStatus === 'completed' && handleViewSolution(candidate._id)}>
-                          <Typography variant="body2" color="text.secondary">-</Typography>
+                          {candidate.testStatus === 'completed' && candidate.assignedTest?.testType === 'MCQ' && candidate.mcqScore !== undefined ? (
+                            <Typography variant="body2" fontWeight={600}>
+                              {candidate.mcqScore}/{candidate.mcqTotalQuestions} ({Math.round((candidate.mcqScore / candidate.mcqTotalQuestions) * 100)}%)
+                            </Typography>
+                          ) : (
+                            <Typography variant="body2" color="text.secondary">-</Typography>
+                          )}
                         </TableCell>
                         <TableCell onClick={() => candidate.testStatus === 'completed' && handleViewSolution(candidate._id)}>
-                          <Typography variant="body2" color="text.secondary">-</Typography>
+                          {candidate.testStatus === 'completed' && candidate.assignedTest?.testType === 'MCQ' && candidate.mcqScore !== undefined ? (
+                            <Chip 
+                              label={Math.round((candidate.mcqScore / candidate.mcqTotalQuestions) * 100) >= 75 ? 'Pass' : 'Fail'}
+                              size="small"
+                              color={Math.round((candidate.mcqScore / candidate.mcqTotalQuestions) * 100) >= 75 ? 'success' : 'error'}
+                            />
+                          ) : (
+                            <Typography variant="body2" color="text.secondary">-</Typography>
+                          )}
                         </TableCell>
                         <TableCell>
                           <IconButton 
@@ -1076,6 +1127,17 @@ const AdminDashboard = () => {
             value={sessionName}
             onChange={e => setSessionName(e.target.value)}
           />
+          <FormControl fullWidth margin="normal">
+            <InputLabel>Test Type</InputLabel>
+            <Select
+              value={testType}
+              onChange={e => setTestType(e.target.value)}
+              label="Test Type"
+            >
+              <MenuItem value="Coding">Coding</MenuItem>
+              <MenuItem value="MCQ">MCQ</MenuItem>
+            </Select>
+          </FormControl>
           <TextField
             label="Duration (minutes)"
             type="number"
@@ -1087,14 +1149,27 @@ const AdminDashboard = () => {
           
           <Box sx={{ mt: 3, mb: 2 }}>
             <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 600 }}>
-              Upload Programs (Excel/CSV File)
+              {testType === 'Coding' ? 'Upload Programs (Excel/CSV File)' : 'Upload MCQ Questions (Excel/CSV File)'}
             </Typography>
-            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
-              Required columns: <strong>Title</strong>, <strong>Description</strong>
-            </Typography>
-            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
-              Optional column: <strong>TestCases</strong> (can be JSON array or plain text)
-            </Typography>
+            {testType === 'Coding' ? (
+              <>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
+                  Required columns: <strong>Title</strong>, <strong>Description</strong>
+                </Typography>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
+                  Optional column: <strong>TestCases</strong> (can be JSON array or plain text)
+                </Typography>
+              </>
+            ) : (
+              <>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
+                  Required columns: <strong>Question</strong>, <strong>Option1</strong>, <strong>Option2</strong>, <strong>Option3</strong>, <strong>Option4</strong>, <strong>CorrectOption</strong>
+                </Typography>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
+                  Note: CorrectOption should be a number (1, 2, 3, or 4)
+                </Typography>
+              </>
+            )}
             <Button
               variant="outlined"
               component="label"
@@ -1146,17 +1221,36 @@ const AdminDashboard = () => {
             required
           />
           <FormControl fullWidth margin="normal" disabled={!!candidateFile} required>
-            <InputLabel>Test</InputLabel>
+            <InputLabel>Test Type</InputLabel>
+            <Select
+              value={candidateTestType}
+              onChange={e => {
+                setCandidateTestType(e.target.value);
+                setCandidateTestSession(''); // Reset test selection when test type changes
+              }}
+              label="Test Type"
+            >
+              {[...new Set(sessions.map(s => s.testType || 'Coding'))].map((type) => (
+                <MenuItem key={type} value={type}>
+                  {type}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+          <FormControl fullWidth margin="normal" disabled={!!candidateFile || !candidateTestType} required>
+            <InputLabel>Test Name</InputLabel>
             <Select
               value={candidateTestSession}
               onChange={e => setCandidateTestSession(e.target.value)}
-              label="Test"
+              label="Test Name"
             >
-              {sessions.map((session) => (
-                <MenuItem key={session._id} value={session._id}>
-                  {session.name}
-                </MenuItem>
-              ))}
+              {sessions
+                .filter(session => (session.testType || 'Coding') === candidateTestType)
+                .map((session) => (
+                  <MenuItem key={session._id} value={session._id}>
+                    {session.name}
+                  </MenuItem>
+                ))}
             </Select>
           </FormControl>
           
@@ -1165,10 +1259,10 @@ const AdminDashboard = () => {
               Or Upload Candidates (Excel/CSV File)
             </Typography>
             <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
-              Required columns: <strong>username</strong>, <strong>password</strong>, <strong>test</strong>
+              Required columns: <strong>Username</strong>, <strong>Password</strong>, <strong>TestType</strong>, <strong>TestName</strong>
             </Typography>
             <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
-              Note: test column should match Test names (case insensitive)
+              Note: TestType should be 'Coding' or 'MCQ'. TestName should match Test names (case insensitive)
             </Typography>
             <Button
               variant="outlined"
@@ -1209,17 +1303,36 @@ const AdminDashboard = () => {
             disabled
           />
           <FormControl fullWidth margin="normal" required>
-            <InputLabel>Test</InputLabel>
+            <InputLabel>Test Type</InputLabel>
+            <Select
+              value={editCandidateTestType}
+              onChange={e => {
+                setEditCandidateTestType(e.target.value);
+                setEditCandidateTestSession(''); // Reset test selection when test type changes
+              }}
+              label="Test Type"
+            >
+              {[...new Set(sessions.map(s => s.testType || 'Coding'))].map((type) => (
+                <MenuItem key={type} value={type}>
+                  {type}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+          <FormControl fullWidth margin="normal" disabled={!editCandidateTestType} required>
+            <InputLabel>Test Name</InputLabel>
             <Select
               value={editCandidateTestSession}
               onChange={e => setEditCandidateTestSession(e.target.value)}
-              label="Test"
+              label="Test Name"
             >
-              {sessions.map((session) => (
-                <MenuItem key={session._id} value={session._id}>
-                  {session.name}
-                </MenuItem>
-              ))}
+              {sessions
+                .filter(session => (session.testType || 'Coding') === editCandidateTestType)
+                .map((session) => (
+                  <MenuItem key={session._id} value={session._id}>
+                    {session.name}
+                  </MenuItem>
+                ))}
             </Select>
           </FormControl>
         </DialogContent>
@@ -1240,6 +1353,18 @@ const AdminDashboard = () => {
             value={sessionName}
             onChange={e => setSessionName(e.target.value)}
           />
+          <FormControl fullWidth margin="normal" disabled>
+            <InputLabel>Test Type</InputLabel>
+            <Select
+              value={testType}
+              onChange={e => setTestType(e.target.value)}
+              label="Test Type"
+              disabled
+            >
+              <MenuItem value="Coding">Coding</MenuItem>
+              <MenuItem value="MCQ">MCQ</MenuItem>
+            </Select>
+          </FormControl>
           <TextField
             label="Duration (minutes)"
             type="number"
@@ -1249,112 +1374,179 @@ const AdminDashboard = () => {
             onChange={e => setSessionDuration(e.target.value)}
           />
           
-          <Typography variant="subtitle1" sx={{ mt: 3, mb: 1, fontWeight: 600 }}>
-            Programs
-          </Typography>
-          
-          {programs.length === 0 ? (
-            <Typography color="text.secondary" sx={{ py: 2 }}>
-              No programs available. Add programs first.
-            </Typography>
-          ) : (
-            <List sx={{ bgcolor: 'background.paper', border: '1px solid #e0e0e0', borderRadius: 1 }}>
-              {programs.map((program) => (
-                <React.Fragment key={program._id}>
-                  <ListItem
-                    sx={{ 
-                      '&:hover': { bgcolor: '#f5f5f5' },
-                      borderBottom: expandedProgram === program._id ? 'none' : '1px solid #e0e0e0',
-                      display: 'flex',
-                      alignItems: 'flex-start'
-                    }}
-                  >
-                    <FormControlLabel
-                      control={
-                        <Checkbox
-                          checked={selectedPrograms.includes(program._id)}
-                          onChange={() => handleProgramToggle(program._id)}
+          {testType === 'Coding' ? (
+            <>
+              <Typography variant="subtitle1" sx={{ mt: 3, mb: 1, fontWeight: 600 }}>
+                Programs
+              </Typography>
+              
+              {programs.length === 0 ? (
+                <Typography color="text.secondary" sx={{ py: 2 }}>
+                  No programs available. Add programs first.
+                </Typography>
+              ) : (
+                <List sx={{ bgcolor: 'background.paper', border: '1px solid #e0e0e0', borderRadius: 1 }}>
+                  {programs.map((program) => (
+                    <React.Fragment key={program._id}>
+                      <ListItem
+                        sx={{ 
+                          '&:hover': { bgcolor: '#f5f5f5' },
+                          borderBottom: expandedProgram === program._id ? 'none' : '1px solid #e0e0e0',
+                          display: 'flex',
+                          alignItems: 'flex-start'
+                        }}
+                      >
+                        <FormControlLabel
+                          control={
+                            <Checkbox
+                              checked={selectedPrograms.includes(program._id)}
+                              onChange={() => handleProgramToggle(program._id)}
+                            />
+                          }
+                          label=""
+                          sx={{ mr: 1, mt: 1 }}
                         />
-                      }
-                      label=""
-                      sx={{ mr: 1, mt: 1 }}
-                    />
-                    <Box sx={{ flex: 1, minWidth: 0 }}>
-                      {editingProgram === program._id ? (
-                        <Box sx={{ py: 1 }}>
-                          <TextField
-                            label="Program Title"
-                            fullWidth
-                            size="small"
-                            value={editProgramTitle}
-                            onChange={e => setEditProgramTitle(e.target.value)}
-                            sx={{ mb: 1 }}
-                          />
-                          <TextField
-                            label="Program Description"
-                            fullWidth
-                            size="small"
-                            multiline
-                            rows={4}
-                            value={editProgramDescription}
-                            onChange={e => setEditProgramDescription(e.target.value)}
-                          />
-                          <Box sx={{ mt: 1, display: 'flex', gap: 1 }}>
-                            <Button 
-                              size="small" 
-                              variant="contained"
-                              onClick={() => handleUpdateProgram(program._id)}
-                            >
-                              Save
-                            </Button>
-                            <Button 
-                              size="small" 
-                              variant="outlined"
-                              onClick={handleCancelEditProgram}
-                            >
-                              Cancel
-                            </Button>
-                          </Box>
+                        <Box sx={{ flex: 1, minWidth: 0 }}>
+                          {editingProgram === program._id ? (
+                            <Box sx={{ py: 1 }}>
+                              <TextField
+                                label="Program Title"
+                                fullWidth
+                                size="small"
+                                value={editProgramTitle}
+                                onChange={e => setEditProgramTitle(e.target.value)}
+                                sx={{ mb: 1 }}
+                              />
+                              <TextField
+                                label="Program Description"
+                                fullWidth
+                                size="small"
+                                multiline
+                                rows={4}
+                                value={editProgramDescription}
+                                onChange={e => setEditProgramDescription(e.target.value)}
+                              />
+                              <Box sx={{ mt: 1, display: 'flex', gap: 1 }}>
+                                <Button 
+                                  size="small" 
+                                  variant="contained"
+                                  onClick={() => handleUpdateProgram(program._id)}
+                                >
+                                  Save
+                                </Button>
+                                <Button 
+                                  size="small" 
+                                  variant="outlined"
+                                  onClick={handleCancelEditProgram}
+                                >
+                                  Cancel
+                                </Button>
+                              </Box>
+                            </Box>
+                          ) : (
+                            <>
+                              <ListItemText 
+                                primary={program.title}
+                                onClick={() => setExpandedProgram(expandedProgram === program._id ? null : program._id)}
+                                sx={{ flex: 1, cursor: 'pointer' }}
+                              />
+                              <Box sx={{ display: 'flex', gap: 1, mt: 0.5 }}>
+                                <Button
+                                  size="small"
+                                  startIcon={<EditIcon />}
+                                  onClick={() => handleEditProgram(program)}
+                                  sx={{ textTransform: 'none' }}
+                                >
+                                  Edit
+                                </Button>
+                                <IconButton
+                                  onClick={() => setExpandedProgram(expandedProgram === program._id ? null : program._id)}
+                                  size="small"
+                                >
+                                  {expandedProgram === program._id ? <ExpandLess /> : <ExpandMore />}
+                                </IconButton>
+                              </Box>
+                            </>
+                          )}
                         </Box>
-                      ) : (
-                        <>
-                          <ListItemText 
-                            primary={program.title}
-                            onClick={() => setExpandedProgram(expandedProgram === program._id ? null : program._id)}
-                            sx={{ flex: 1, cursor: 'pointer' }}
-                          />
-                          <Box sx={{ display: 'flex', gap: 1, mt: 0.5 }}>
-                            <Button
-                              size="small"
-                              startIcon={<EditIcon />}
-                              onClick={() => handleEditProgram(program)}
-                              sx={{ textTransform: 'none' }}
-                            >
-                              Edit
-                            </Button>
+                      </ListItem>
+                      {editingProgram !== program._id && (
+                        <Collapse in={expandedProgram === program._id} timeout="auto" unmountOnExit>
+                          <Box sx={{ p: 2, bgcolor: '#fafafa', borderBottom: '1px solid #e0e0e0' }}>
+                            <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: 'pre-wrap' }}>
+                              {program.description}
+                            </Typography>
+                          </Box>
+                        </Collapse>
+                      )}
+                    </React.Fragment>
+                  ))}
+                </List>
+              )}
+            </>
+          ) : (
+            <>
+              <Typography variant="subtitle1" sx={{ mt: 3, mb: 1, fontWeight: 600 }}>
+                MCQ Questions
+              </Typography>
+              
+              {mcqQuestions.length === 0 ? (
+                <Typography color="text.secondary" sx={{ py: 2 }}>
+                  No MCQ questions available.
+                </Typography>
+              ) : (
+                <List sx={{ bgcolor: 'background.paper', border: '1px solid #e0e0e0', borderRadius: 1 }}>
+                  {mcqQuestions.map((question, index) => (
+                    <React.Fragment key={question._id}>
+                      <ListItem
+                        sx={{ 
+                          '&:hover': { bgcolor: '#f5f5f5' },
+                          borderBottom: expandedMcqQuestion === question._id ? 'none' : '1px solid #e0e0e0',
+                          display: 'flex',
+                          alignItems: 'flex-start'
+                        }}
+                      >
+                        <Box sx={{ flex: 1, minWidth: 0 }}>
+                          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <ListItemText 
+                              primary={`Q${index + 1}: ${question.question}`}
+                              onClick={() => setExpandedMcqQuestion(expandedMcqQuestion === question._id ? null : question._id)}
+                              sx={{ flex: 1, cursor: 'pointer' }}
+                            />
                             <IconButton
-                              onClick={() => setExpandedProgram(expandedProgram === program._id ? null : program._id)}
+                              onClick={() => setExpandedMcqQuestion(expandedMcqQuestion === question._id ? null : question._id)}
                               size="small"
                             >
-                              {expandedProgram === program._id ? <ExpandLess /> : <ExpandMore />}
+                              {expandedMcqQuestion === question._id ? <ExpandLess /> : <ExpandMore />}
                             </IconButton>
                           </Box>
-                        </>
-                      )}
-                    </Box>
-                  </ListItem>
-                  {editingProgram !== program._id && (
-                    <Collapse in={expandedProgram === program._id} timeout="auto" unmountOnExit>
-                      <Box sx={{ p: 2, bgcolor: '#fafafa', borderBottom: '1px solid #e0e0e0' }}>
-                        <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: 'pre-wrap' }}>
-                          {program.description}
-                        </Typography>
-                      </Box>
-                    </Collapse>
-                  )}
-                </React.Fragment>
-              ))}
-            </List>
+                        </Box>
+                      </ListItem>
+                      <Collapse in={expandedMcqQuestion === question._id} timeout="auto" unmountOnExit>
+                        <Box sx={{ p: 2, bgcolor: '#fafafa', borderBottom: '1px solid #e0e0e0' }}>
+                          <Typography variant="body2" fontWeight="600" sx={{ mb: 1 }}>Options:</Typography>
+                          {question.options?.map((option, optIndex) => (
+                            <Box key={optIndex} sx={{ display: 'flex', alignItems: 'center', mb: 0.5 }}>
+                              <Typography 
+                                variant="body2" 
+                                color="text.secondary"
+                                sx={{ 
+                                  fontWeight: question.correctOption === (optIndex + 1) ? 'bold' : 'normal',
+                                  color: question.correctOption === (optIndex + 1) ? 'success.main' : 'text.secondary'
+                                }}
+                              >
+                                {optIndex + 1}. {option}
+                                {question.correctOption === (optIndex + 1) && ' ✓'}
+                              </Typography>
+                            </Box>
+                          ))}
+                        </Box>
+                      </Collapse>
+                    </React.Fragment>
+                  ))}
+                </List>
+              )}
+            </>
           )}
         </DialogContent>
         <DialogActions>

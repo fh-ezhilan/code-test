@@ -34,6 +34,15 @@ const TestInstructionsPage = () => {
         // Assuming you have authentication in place to get the token
         const res = await axios.get('/api/candidate/test/instructions', { withCredentials: true });
         setInstructions(res.data);
+        
+        // If test is already in progress, redirect to the appropriate test page
+        if (user?.testStatus === 'in-progress') {
+          if (res.data.testType === 'MCQ') {
+            navigate('/test/mcq');
+          } else {
+            navigate('/test');
+          }
+        }
       } catch (err) {
         console.error(err);
         setError(err.response?.data?.msg || 'Failed to load test instructions');
@@ -45,9 +54,15 @@ const TestInstructionsPage = () => {
   const handleStartTest = async () => {
     try {
       await axios.post('/api/candidate/test/start', {}, { withCredentials: true });
-      navigate('/test');
+      // Navigate based on test type
+      if (instructions.testType === 'MCQ') {
+        navigate('/test/mcq');
+      } else {
+        navigate('/test');
+      }
     } catch (err) {
       console.error('Error starting test:', err);
+      // Fallback to regular test page
       navigate('/test');
     }
   };

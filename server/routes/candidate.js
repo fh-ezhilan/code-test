@@ -9,4 +9,8 @@ router.post('/test/start', isCandidate, candidateController.startTest);
 router.post('/test/run', isCandidate, candidateController.runCode);
 router.post('/test/submit', isCandidate, candidateController.submitSolution);
 
+// MCQ routes
+router.get('/test/mcq/questions', isCandidate, candidateController.getMCQQuestions);
+router.post('/test/mcq/submit', isCandidate, candidateController.submitMCQAnswers);
+
 module.exports = router;

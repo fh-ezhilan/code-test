@@ -1,6 +1,8 @@
 const TestSession = require('../models/TestSession');
 const Program = require('../models/Program');
 const Solution = require('../models/Solution');
+const MCQQuestion = require('../models/MCQQuestion');
+const MCQAnswer = require('../models/MCQAnswer');
 
 exports.getTestInstructions = async (req, res) => {
   try {
@@ -19,7 +21,10 @@ exports.getTestInstructions = async (req, res) => {
     res.json({
       name: testSession.name,
       duration: testSession.duration,
-      instructions: 'Read the problem carefully and write your solution. You can choose between Java, JavaScript, and Python.',
+      testType: testSession.testType,
+      instructions: testSession.testType === 'MCQ' 
+        ? 'Read each question carefully and select the correct option. You can navigate between questions and change your answers before submitting.'
+        : 'Read the problem carefully and write your solution. You can choose between Java, JavaScript, and Python.',
     });
   } catch (err) {
     console.error(err.message);
@@ -183,5 +188,88 @@ exports.runCode = async (req, res) => {
       msg: 'Code execution failed',
       error: err.response?.data || err.message 
     });
+  }
+};
+
+// MCQ Test endpoints
+exports.getMCQQuestions = async (req, res) => {
+  try {
+    const User = require('../models/User');
+    const user = await User.findById(req.user.id);
+    
+    if (!user || !user.assignedTest) {
+      return res.status(400).json({ msg: 'No test assigned to this candidate' });
+    }
+    
+    const testSession = await TestSession.findById(user.assignedTest).populate('mcqQuestions');
+    if (!testSession) {
+      return res.status(404).json({ msg: 'Assigned test session not found' });
+    }
+    
+    // Return questions without revealing correct answers
+    const questions = testSession.mcqQuestions.map(q => ({
+      _id: q._id,
+      question: q.question,
+      options: q.options,
+      // Don't send correctOption to frontend
+    }));
+    
+    res.json({
+      testType: testSession.testType,
+      questions,
+      testStartTime: user.testStartTime,
+      testDuration: user.testDuration || testSession.duration,
+    });
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).send('Server Error');
+  }
+};
+
+exports.submitMCQAnswers = async (req, res) => {
+  const { answers } = req.body; // Array of { questionId, selectedOption }
+  
+  try {
+    const User = require('../models/User');
+    const user = await User.findById(req.user.id);
+    
+    if (!user || !user.assignedTest) {
+      return res.status(400).json({ msg: 'No test assigned' });
+    }
+    
+    const testSession = await TestSession.findById(user.assignedTest).populate('mcqQuestions');
+    
+    // Calculate score
+    let score = 0;
+    const totalQuestions = testSession.mcqQuestions.length;
+    
+    answers.forEach(answer => {
+      const question = testSession.mcqQuestions.find(q => q._id.toString() === answer.questionId);
+      if (question && question.correctOption === answer.selectedOption) {
+        score++;
+      }
+    });
+    
+    // Save MCQ answers
+    const mcqAnswer = new MCQAnswer({
+      candidate: req.user.id,
+      testSession: user.assignedTest,
+      answers,
+      score,
+      totalQuestions,
+    });
+    await mcqAnswer.save();
+    
+    // Update user status to completed
+    await User.findByIdAndUpdate(req.user.id, { testStatus: 'completed' });
+    
+    res.json({ 
+      msg: 'MCQ answers submitted successfully',
+      score,
+      totalQuestions,
+    });
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).send('Server Error');
   }
 };
