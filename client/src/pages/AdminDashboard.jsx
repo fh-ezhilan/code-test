@@ -94,8 +94,7 @@ const AdminDashboard = () => {
   const [snackbars, setSnackbars] = useState([]);
   const [editingCandidate, setEditingCandidate] = useState(null);
   const [openEditCandidateDialog, setOpenEditCandidateDialog] = useState(false);
-  const [editCandidateTestType, setEditCandidateTestType] = useState('');
-  const [editCandidateTestSession, setEditCandidateTestSession] = useState('');
+  const [editCandidatePassword, setEditCandidatePassword] = useState('');
   
   // Delete confirmation states
   const [deleteConfirmDialog, setDeleteConfirmDialog] = useState({ open: false, type: '', id: null, name: '' });
@@ -111,6 +110,17 @@ const AdminDashboard = () => {
   const [openBulkDeleteAdminDialog, setOpenBulkDeleteAdminDialog] = useState(false);
   const [editAdminUsername, setEditAdminUsername] = useState('');
   const [editAdminPassword, setEditAdminPassword] = useState('');
+  
+  // Test history states
+  const [openTestHistoryDialog, setOpenTestHistoryDialog] = useState(false);
+  const [selectedCandidateForHistory, setSelectedCandidateForHistory] = useState(null);
+  const [testHistory, setTestHistory] = useState([]);
+  const [openAssignTestDialog, setOpenAssignTestDialog] = useState(false);
+  const [assignTestType, setAssignTestType] = useState('');
+  const [assignTestSession, setAssignTestSession] = useState('');
+  const [makeActiveTest, setMakeActiveTest] = useState(true);
+  const [openSubmissionDialog, setOpenSubmissionDialog] = useState(false);
+  const [viewingSubmission, setViewingSubmission] = useState(null);
 
   useEffect(() => {
     fetchCandidates();
@@ -190,10 +200,10 @@ const AdminDashboard = () => {
       setOpenTestDialog(false);
       fetchSessions();
       fetchPrograms();
-      alert('Test session created successfully');
+      addSnackbar('Test session created successfully', 'success');
     } catch (err) {
       console.error(err);
-      alert('Failed to create test session: ' + (err.response?.data?.msg || err.message));
+      addSnackbar('Failed to create test session: ' + (err.response?.data?.msg || err.message), 'error');
     }
   };
 
@@ -306,33 +316,30 @@ const AdminDashboard = () => {
 
   const handleEditCandidate = (candidate) => {
     setEditingCandidate(candidate);
-    const assignedTest = sessions.find(s => s._id === candidate.assignedTest?._id);
-    setEditCandidateTestType(assignedTest?.testType || 'Coding');
-    setEditCandidateTestSession(candidate.assignedTest?._id || '');
+    setEditCandidatePassword('');
     setOpenEditCandidateDialog(true);
   };
 
   const handleUpdateCandidate = async () => {
-    if (!editCandidateTestSession) {
-      addSnackbar('Please select a test', 'warning');
+    if (!editCandidatePassword || editCandidatePassword.trim().length === 0) {
+      addSnackbar('Please enter a new password', 'warning');
       return;
     }
 
     try {
       await axios.put(`/api/admin/candidate/${editingCandidate._id}`, {
-        testSessionId: editCandidateTestSession,
+        password: editCandidatePassword,
       }, {
         withCredentials: true
       });
       setOpenEditCandidateDialog(false);
       setEditingCandidate(null);
-      setEditCandidateTestType('');
-      setEditCandidateTestSession('');
-      addSnackbar('Candidate updated successfully', 'success');
+      setEditCandidatePassword('');
+      addSnackbar('Password reset successfully', 'success');
       fetchCandidates();
     } catch (err) {
       console.error(err);
-      addSnackbar(err.response?.data?.msg || 'Failed to update candidate', 'error');
+      addSnackbar(err.response?.data?.msg || 'Failed to reset password', 'error');
     }
   };
 
@@ -363,6 +370,17 @@ const AdminDashboard = () => {
         await axios.delete(`/api/admin/session/${id}`, { withCredentials: true });
         addSnackbar('Test session deleted successfully', 'success');
         await fetchSessions();
+      } else if (type === 'test-assignment') {
+        await axios.delete(`/api/admin/test-assignment/${id}`, { withCredentials: true });
+        addSnackbar('Test assignment deleted successfully', 'success');
+        // Refresh test history
+        if (selectedCandidateForHistory) {
+          const res = await axios.get(`/api/admin/candidate/${selectedCandidateForHistory._id}/test-history`, {
+            withCredentials: true
+          });
+          setTestHistory(res.data);
+        }
+        await fetchCandidates();
       }
     } catch (err) {
       console.error(err);
@@ -630,7 +648,7 @@ const AdminDashboard = () => {
       fetchPrograms(); // Restore full programs list
     } catch (err) {
       console.error(err);
-      alert('Failed to update test session');
+      addSnackbar('Failed to update test session', 'error');
     }
   };
 
@@ -680,7 +698,7 @@ const AdminDashboard = () => {
       setEditProgramDescription('');
     } catch (err) {
       console.error(err);
-      alert('Failed to update program');
+      addSnackbar('Failed to update program', 'error');
     }
   };
 
@@ -693,8 +711,98 @@ const AdminDashboard = () => {
       setOpenSolutionDialog(true);
     } catch (err) {
       console.error(err);
-      alert('No solution found for this candidate');
+      addSnackbar('No solution found for this candidate', 'error');
     }
+  };
+  
+  const handleViewTestHistory = async (candidate) => {
+    try {
+      const res = await axios.get(`/api/admin/candidate/${candidate._id}/test-history`, {
+        withCredentials: true
+      });
+      setTestHistory(res.data);
+      setSelectedCandidateForHistory(candidate);
+      setOpenTestHistoryDialog(true);
+    } catch (err) {
+      console.error(err);
+      addSnackbar('Failed to load test history', 'error');
+    }
+  };
+  
+  const handleSetActiveTest = async (assignmentId) => {
+    try {
+      await axios.put(`/api/admin/test-assignment/${assignmentId}/set-active`, {}, {
+        withCredentials: true
+      });
+      // Refresh test history
+      if (selectedCandidateForHistory) {
+        const res = await axios.get(`/api/admin/candidate/${selectedCandidateForHistory._id}/test-history`, {
+          withCredentials: true
+        });
+        setTestHistory(res.data);
+      }
+      // Refresh candidates list
+      await fetchCandidates();
+      addSnackbar('Test set as active successfully', 'success');
+    } catch (err) {
+      console.error(err);
+      addSnackbar(err.response?.data?.msg || 'Failed to set active test', 'error');
+    }
+  };
+  
+  const handleAssignTest = async () => {
+    if (!assignTestSession) {
+      addSnackbar('Please select a test', 'error');
+      return;
+    }
+    
+    try {
+      await axios.post('/api/admin/test-assignment', {
+        candidateId: selectedCandidateForHistory._id,
+        testSessionId: assignTestSession,
+        makeActive: makeActiveTest,
+      }, { withCredentials: true });
+      
+      // Refresh test history
+      const res = await axios.get(`/api/admin/candidate/${selectedCandidateForHistory._id}/test-history`, {
+        withCredentials: true
+      });
+      setTestHistory(res.data);
+      
+      // Refresh candidates list
+      await fetchCandidates();
+      
+      setOpenAssignTestDialog(false);
+      setAssignTestType('');
+      setAssignTestSession('');
+      setMakeActiveTest(true);
+      addSnackbar('Test assigned successfully', 'success');
+    } catch (err) {
+      console.error(err);
+      addSnackbar('Failed to assign test', 'error');
+    }
+  };
+  
+  const handleViewSubmission = async (assignment) => {
+    try {
+      const res = await axios.get(`/api/admin/test-assignment/${assignment._id}/submission`, {
+        withCredentials: true
+      });
+      setViewingSubmission(res.data);
+      setOpenSubmissionDialog(true);
+    } catch (err) {
+      console.error(err);
+      addSnackbar('Failed to load submission', 'error');
+    }
+  };
+  
+  const handleDeleteTestAssignment = async (assignmentId, testName) => {
+    setDeleteConfirmDialog({
+      open: true,
+      type: 'test-assignment',
+      id: assignmentId,
+      name: testName || 'this test assignment'
+    });
   };
 
   const handleCloseEditDialog = () => {
@@ -879,9 +987,6 @@ const AdminDashboard = () => {
                       />
                     </TableCell>
                     <TableCell sx={{ fontWeight: 600 }}>Username</TableCell>
-                    <TableCell sx={{ fontWeight: 600 }}>Test</TableCell>
-                    <TableCell sx={{ fontWeight: 600 }}>Problem Title</TableCell>
-                    <TableCell sx={{ fontWeight: 600 }}>Status</TableCell>
                     <TableCell sx={{ fontWeight: 600 }}>Score</TableCell>
                     <TableCell sx={{ fontWeight: 600 }}>Result</TableCell>
                     <TableCell sx={{ fontWeight: 600 }}>Actions</TableCell>
@@ -890,7 +995,7 @@ const AdminDashboard = () => {
                 <TableBody>
                   {candidates.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={8} align="center" sx={{ py: 4 }}>
+                      <TableCell colSpan={5} align="center" sx={{ py: 4 }}>
                         <Typography color="text.secondary">No candidates created yet</Typography>
                       </TableCell>
                     </TableRow>
@@ -902,9 +1007,10 @@ const AdminDashboard = () => {
                         key={candidate._id} 
                         hover
                         sx={{ 
-                          cursor: candidate.testStatus === 'completed' ? 'pointer' : 'default',
-                          '&:hover': candidate.testStatus === 'completed' ? { bgcolor: '#f5f5f5' } : {}
+                          cursor: 'pointer',
+                          '&:hover': { bgcolor: '#f5f5f5' }
                         }}
+                        onClick={() => handleViewTestHistory(candidate)}
                       >
                         <TableCell padding="checkbox" onClick={(e) => e.stopPropagation()}>
                           <Checkbox
@@ -912,47 +1018,22 @@ const AdminDashboard = () => {
                             onChange={() => handleSelectCandidate(candidate._id)}
                           />
                         </TableCell>
-                        <TableCell onClick={() => candidate.testStatus === 'completed' && handleViewSolution(candidate._id)}>{candidate.username}</TableCell>
-                        <TableCell onClick={() => candidate.testStatus === 'completed' && handleViewSolution(candidate._id)}>
-                          {candidate.assignedTest?.name ? (
-                            <Chip label={candidate.assignedTest.name} size="small" color="secondary" variant="outlined" />
-                          ) : (
-                            <Typography variant="body2" color="text.secondary">Not assigned</Typography>
-                          )}
-                        </TableCell>
-                        <TableCell onClick={() => candidate.testStatus === 'completed' && handleViewSolution(candidate._id)}>
-                          {candidate.assignedProgram?.title ? (
-                            <Chip label={candidate.assignedProgram.title} size="small" color="primary" variant="outlined" />
-                          ) : (
-                            <Typography variant="body2" color="text.secondary">Not assigned</Typography>
-                          )}
-                        </TableCell>
-                        <TableCell onClick={() => candidate.testStatus === 'completed' && handleViewSolution(candidate._id)}>
-                          {candidate.testStatus === 'not-started' && (
-                            <Chip label="Not Started" size="small" color="default" />
-                          )}
-                          {candidate.testStatus === 'in-progress' && (
-                            <Chip label="In Progress" size="small" color="warning" />
-                          )}
-                          {candidate.testStatus === 'completed' && (
-                            <Chip label="Completed" size="small" color="success" />
-                          )}
-                        </TableCell>
-                        <TableCell onClick={() => candidate.testStatus === 'completed' && handleViewSolution(candidate._id)}>
-                          {candidate.testStatus === 'completed' && candidate.assignedTest?.testType === 'MCQ' && candidate.mcqScore !== undefined ? (
+                        <TableCell>{candidate.username}</TableCell>
+                        <TableCell>
+                          {candidate.averageScore !== undefined ? (
                             <Typography variant="body2" fontWeight={600}>
-                              {candidate.mcqScore}/{candidate.mcqTotalQuestions} ({Math.round((candidate.mcqScore / candidate.mcqTotalQuestions) * 100)}%)
+                              {candidate.averageScore}%
                             </Typography>
                           ) : (
                             <Typography variant="body2" color="text.secondary">-</Typography>
                           )}
                         </TableCell>
-                        <TableCell onClick={() => candidate.testStatus === 'completed' && handleViewSolution(candidate._id)}>
-                          {candidate.testStatus === 'completed' && candidate.assignedTest?.testType === 'MCQ' && candidate.mcqScore !== undefined ? (
+                        <TableCell>
+                          {candidate.averageScore !== undefined ? (
                             <Chip 
-                              label={Math.round((candidate.mcqScore / candidate.mcqTotalQuestions) * 100) >= 75 ? 'Pass' : 'Fail'}
+                              label={candidate.averageScore >= 75 ? 'Pass' : 'Fail'}
                               size="small"
-                              color={Math.round((candidate.mcqScore / candidate.mcqTotalQuestions) * 100) >= 75 ? 'success' : 'error'}
+                              color={candidate.averageScore >= 75 ? 'success' : 'error'}
                             />
                           ) : (
                             <Typography variant="body2" color="text.secondary">-</Typography>
@@ -1293,7 +1374,7 @@ const AdminDashboard = () => {
 
       {/* Edit Candidate Dialog */}
       <Dialog open={openEditCandidateDialog} onClose={() => setOpenEditCandidateDialog(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>Edit Candidate</DialogTitle>
+        <DialogTitle>Reset Candidate Password</DialogTitle>
         <DialogContent>
           <TextField
             label="Username"
@@ -1302,43 +1383,26 @@ const AdminDashboard = () => {
             value={editingCandidate?.username || ''}
             disabled
           />
-          <FormControl fullWidth margin="normal" required>
-            <InputLabel>Test Type</InputLabel>
-            <Select
-              value={editCandidateTestType}
-              onChange={e => {
-                setEditCandidateTestType(e.target.value);
-                setEditCandidateTestSession(''); // Reset test selection when test type changes
-              }}
-              label="Test Type"
-            >
-              {[...new Set(sessions.map(s => s.testType || 'Coding'))].map((type) => (
-                <MenuItem key={type} value={type}>
-                  {type}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-          <FormControl fullWidth margin="normal" disabled={!editCandidateTestType} required>
-            <InputLabel>Test Name</InputLabel>
-            <Select
-              value={editCandidateTestSession}
-              onChange={e => setEditCandidateTestSession(e.target.value)}
-              label="Test Name"
-            >
-              {sessions
-                .filter(session => (session.testType || 'Coding') === editCandidateTestType)
-                .map((session) => (
-                  <MenuItem key={session._id} value={session._id}>
-                    {session.name}
-                  </MenuItem>
-                ))}
-            </Select>
-          </FormControl>
+          <TextField
+            label="New Password"
+            type="password"
+            fullWidth
+            margin="normal"
+            value={editCandidatePassword}
+            onChange={e => setEditCandidatePassword(e.target.value)}
+            required
+            helperText="Enter a new password for this candidate"
+          />
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setOpenEditCandidateDialog(false)}>Cancel</Button>
-          <Button onClick={handleUpdateCandidate} variant="contained">Update</Button>
+          <Button 
+            onClick={handleUpdateCandidate} 
+            variant="contained"
+            disabled={!editCandidatePassword || editCandidatePassword.trim().length === 0}
+          >
+            Update
+          </Button>
         </DialogActions>
       </Dialog>
 
@@ -1733,6 +1797,323 @@ const AdminDashboard = () => {
           <Button onClick={confirmDelete} variant="contained" color="error">
             Delete
           </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Test History Dialog */}
+      <Dialog 
+        open={openTestHistoryDialog} 
+        onClose={() => setOpenTestHistoryDialog(false)}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle>
+          Test History - {selectedCandidateForHistory?.username}
+        </DialogTitle>
+        <DialogContent>
+          <Box sx={{ mb: 2 }}>
+            <Button
+              variant="contained"
+              onClick={() => setOpenAssignTestDialog(true)}
+              sx={{ bgcolor: '#00a86b', '&:hover': { bgcolor: '#008f5a' } }}
+            >
+              Assign New Test
+            </Button>
+          </Box>
+          
+          <TableContainer>
+            <Table>
+              <TableHead>
+                <TableRow sx={{ bgcolor: '#f8f9fa' }}>
+                  <TableCell sx={{ fontWeight: 600 }}>Test Name</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Type</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Status</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Score</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Result</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Assigned</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Active</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Actions</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {testHistory.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={8} align="center" sx={{ py: 4 }}>
+                      <Typography color="text.secondary">No tests assigned yet</Typography>
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  testHistory.map((assignment) => (
+                    <TableRow key={assignment._id}>
+                      <TableCell>
+                        <Typography variant="body2">
+                          {assignment.testSession?.name || 'N/A'}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Chip 
+                          label={assignment.testType} 
+                          size="small" 
+                          color={assignment.testType === 'MCQ' ? 'secondary' : 'primary'}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        {assignment.status === 'not-started' && (
+                          <Chip label="Not Started" size="small" color="default" />
+                        )}
+                        {assignment.status === 'in-progress' && (
+                          <Chip label="In Progress" size="small" color="warning" />
+                        )}
+                        {assignment.status === 'completed' && (
+                          <Chip label="Completed" size="small" color="success" />
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {assignment.testType === 'MCQ' && assignment.score !== undefined ? (
+                          <Typography variant="body2" fontWeight={600}>
+                            {assignment.score}/{assignment.totalQuestions} ({Math.round((assignment.score / assignment.totalQuestions) * 100)}%)
+                          </Typography>
+                        ) : (
+                          <Typography variant="body2" color="text.secondary">-</Typography>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {assignment.testType === 'MCQ' && assignment.score !== undefined ? (
+                          <Chip 
+                            label={Math.round((assignment.score / assignment.totalQuestions) * 100) >= 75 ? 'Pass' : 'Fail'}
+                            size="small"
+                            color={Math.round((assignment.score / assignment.totalQuestions) * 100) >= 75 ? 'success' : 'error'}
+                          />
+                        ) : (
+                          <Typography variant="body2" color="text.secondary">-</Typography>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="body2" color="text.secondary">
+                          {new Date(assignment.assignedAt).toLocaleDateString()}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        {assignment.isActive ? (
+                          <Chip label="Active" size="small" color="success" />
+                        ) : assignment.status !== 'completed' ? (
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            onClick={() => handleSetActiveTest(assignment._id)}
+                            sx={{ textTransform: 'none' }}
+                          >
+                            Set Active
+                          </Button>
+                        ) : (
+                          <Typography variant="body2" color="text.secondary">-</Typography>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <Box sx={{ display: 'flex', gap: 1 }}>
+                          {assignment.status === 'completed' && (
+                            <IconButton
+                              size="small"
+                              color="primary"
+                              onClick={() => handleViewSubmission(assignment)}
+                              title="View Submission"
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                                <circle cx="12" cy="12" r="3"></circle>
+                              </svg>
+                            </IconButton>
+                          )}
+                          <IconButton
+                            size="small"
+                            color="error"
+                            onClick={() => handleDeleteTestAssignment(assignment._id, assignment.testName)}
+                            title="Delete"
+                          >
+                            <DeleteIcon />
+                          </IconButton>
+                        </Box>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setOpenTestHistoryDialog(false)}>Close</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Assign Test Dialog */}
+      <Dialog 
+        open={openAssignTestDialog} 
+        onClose={() => setOpenAssignTestDialog(false)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>Assign Test to {selectedCandidateForHistory?.username}</DialogTitle>
+        <DialogContent>
+          <Box sx={{ mt: 2 }}>
+            <FormControl fullWidth margin="normal">
+              <InputLabel>Test Type</InputLabel>
+              <Select
+                value={assignTestType}
+                onChange={(e) => {
+                  setAssignTestType(e.target.value);
+                  setAssignTestSession('');
+                }}
+                label="Test Type"
+              >
+                <MenuItem value="">Select Test Type</MenuItem>
+                <MenuItem value="Coding">Coding</MenuItem>
+                <MenuItem value="MCQ">MCQ</MenuItem>
+              </Select>
+            </FormControl>
+            
+            {assignTestType && (
+              <FormControl fullWidth margin="normal">
+                <InputLabel>Test</InputLabel>
+                <Select
+                  value={assignTestSession}
+                  onChange={(e) => setAssignTestSession(e.target.value)}
+                  label="Test"
+                >
+                  <MenuItem value="">Select Test</MenuItem>
+                  {sessions
+                    .filter(s => s.testType === assignTestType)
+                    .map((session) => (
+                      <MenuItem key={session._id} value={session._id}>
+                        {session.name}
+                      </MenuItem>
+                    ))}
+                </Select>
+              </FormControl>
+            )}
+            
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={makeActiveTest}
+                  onChange={(e) => setMakeActiveTest(e.target.checked)}
+                />
+              }
+              label="Make this test active"
+              sx={{ mt: 2 }}
+            />
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setOpenAssignTestDialog(false)}>Cancel</Button>
+          <Button onClick={handleAssignTest} variant="contained" color="primary">
+            Assign Test
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Submission View Dialog */}
+      <Dialog 
+        open={openSubmissionDialog} 
+        onClose={() => setOpenSubmissionDialog(false)}
+        maxWidth="lg"
+        fullWidth
+      >
+        <DialogTitle>
+          Submission - {viewingSubmission?.testType} Test
+        </DialogTitle>
+        <DialogContent>
+          {viewingSubmission?.testType === 'Coding' ? (
+            <Box sx={{ mt: 2 }}>
+              <Typography variant="h6" gutterBottom>
+                Problem: {viewingSubmission?.program?.title}
+              </Typography>
+              <Typography variant="subtitle2" gutterBottom color="text.secondary">
+                Language: {viewingSubmission?.solution?.language}
+              </Typography>
+              <Paper elevation={3} sx={{ p: 2, bgcolor: '#1e1e1e', mt: 2 }}>
+                <pre style={{ 
+                  color: '#d4d4d4', 
+                  margin: 0, 
+                  fontFamily: 'monospace',
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-word'
+                }}>
+                  {viewingSubmission?.solution?.code || 'No code submitted'}
+                </pre>
+              </Paper>
+            </Box>
+          ) : viewingSubmission?.testType === 'MCQ' ? (
+            <Box sx={{ mt: 2 }}>
+              <Typography variant="h6" gutterBottom>
+                MCQ Answers
+              </Typography>
+              <Typography variant="subtitle1" gutterBottom color="text.secondary">
+                Score: {viewingSubmission?.mcqAnswer?.score}/{viewingSubmission?.mcqAnswer?.totalQuestions} 
+                ({Math.round((viewingSubmission?.mcqAnswer?.score / viewingSubmission?.mcqAnswer?.totalQuestions) * 100)}%)
+              </Typography>
+              
+              {viewingSubmission?.questions?.map((question, index) => {
+                const userAnswer = viewingSubmission?.mcqAnswer?.answers?.find(
+                  a => a.questionId.toString() === question._id.toString()
+                );
+                const isCorrect = userAnswer?.selectedOption === question.correctOption;
+                
+                return (
+                  <Paper key={question._id} elevation={2} sx={{ p: 2, mb: 2, mt: 2 }}>
+                    <Typography variant="subtitle1" fontWeight={600} gutterBottom>
+                      Question {index + 1}: {question.question}
+                    </Typography>
+                    
+                    <Box sx={{ mt: 1, ml: 2 }}>
+                      {question.options.map((option, optIndex) => {
+                        const optionNumber = optIndex + 1;
+                        const isUserAnswer = userAnswer?.selectedOption === optionNumber;
+                        const isCorrectOption = question.correctOption === optionNumber;
+                        
+                        let bgcolor = 'transparent';
+                        if (isUserAnswer && isCorrect) bgcolor = '#e8f5e9';
+                        else if (isUserAnswer && !isCorrect) bgcolor = '#ffebee';
+                        else if (isCorrectOption) bgcolor = '#e8f5e9';
+                        
+                        return (
+                          <Box 
+                            key={optIndex}
+                            sx={{ 
+                              p: 1, 
+                              mb: 1, 
+                              borderRadius: 1,
+                              bgcolor,
+                              border: isUserAnswer ? '2px solid' : '1px solid',
+                              borderColor: isUserAnswer ? (isCorrect ? 'success.main' : 'error.main') : 'divider'
+                            }}
+                          >
+                            <Typography>
+                              {optionNumber}. {option}
+                              {isUserAnswer && ' (Your Answer)'}
+                              {isCorrectOption && ' ✓ (Correct Answer)'}
+                            </Typography>
+                          </Box>
+                        );
+                      })}
+                    </Box>
+                    
+                    <Chip 
+                      label={isCorrect ? 'Correct' : 'Incorrect'}
+                      size="small"
+                      color={isCorrect ? 'success' : 'error'}
+                      sx={{ mt: 1 }}
+                    />
+                  </Paper>
+                );
+              })}
+            </Box>
+          ) : (
+            <Typography>No submission data available</Typography>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setOpenSubmissionDialog(false)}>Close</Button>
         </DialogActions>
       </Dialog>
 

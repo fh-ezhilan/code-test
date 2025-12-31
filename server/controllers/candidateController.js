@@ -3,6 +3,7 @@ const Program = require('../models/Program');
 const Solution = require('../models/Solution');
 const MCQQuestion = require('../models/MCQQuestion');
 const MCQAnswer = require('../models/MCQAnswer');
+const TestAssignment = require('../models/TestAssignment');
 
 exports.getTestInstructions = async (req, res) => {
   try {
@@ -87,6 +88,8 @@ exports.submitSolution = async (req, res) => {
   const { programId, code, language } = req.body;
   try {
     const User = require('../models/User');
+    const user = await User.findById(req.user.id);
+    
     const newSolution = new Solution({
       program: programId,
       candidate: req.user.id,
@@ -97,6 +100,37 @@ exports.submitSolution = async (req, res) => {
     
     // Update user status to completed
     await User.findByIdAndUpdate(req.user.id, { testStatus: 'completed' });
+    
+    // Update or create test assignment
+    if (user.assignedTest) {
+      const existingAssignment = await TestAssignment.findOne({
+        candidate: req.user.id,
+        testSession: user.assignedTest,
+        isActive: true
+      });
+      
+      if (existingAssignment) {
+        await TestAssignment.findByIdAndUpdate(existingAssignment._id, {
+          status: 'completed',
+          completedAt: new Date(),
+        });
+      } else {
+        // Create TestAssignment if it doesn't exist (for legacy tests)
+        await TestAssignment.create({
+          candidate: req.user.id,
+          testSession: user.assignedTest,
+          program: programId,
+          testType: 'Coding',
+          status: 'completed',
+          isActive: true,
+          assignedAt: user.createdAt || new Date(),
+          startedAt: user.testStartTime || new Date(),
+          completedAt: new Date(),
+          testStartTime: user.testStartTime,
+          testDuration: user.testDuration,
+        });
+      }
+    }
     
     res.json({ msg: 'Solution submitted successfully', solution });
   } catch (err) {
@@ -126,6 +160,17 @@ exports.startTest = async (req, res) => {
       testStartTime: new Date(),
       testDuration: testSession.duration
     });
+    
+    // Update test assignment status
+    await TestAssignment.findOneAndUpdate(
+      { candidate: req.user.id, testSession: user.assignedTest, isActive: true },
+      { 
+        status: 'in-progress',
+        startedAt: new Date(),
+        testStartTime: new Date(),
+        testDuration: testSession.duration
+      }
+    );
     
     res.json({ 
       msg: 'Test started',
@@ -262,6 +307,38 @@ exports.submitMCQAnswers = async (req, res) => {
     
     // Update user status to completed
     await User.findByIdAndUpdate(req.user.id, { testStatus: 'completed' });
+    
+    // Update or create test assignment
+    const existingAssignment = await TestAssignment.findOne({
+      candidate: req.user.id,
+      testSession: user.assignedTest,
+      isActive: true
+    });
+    
+    if (existingAssignment) {
+      await TestAssignment.findByIdAndUpdate(existingAssignment._id, {
+        status: 'completed',
+        completedAt: new Date(),
+        score,
+        totalQuestions,
+      });
+    } else {
+      // Create TestAssignment if it doesn't exist (for legacy tests)
+      await TestAssignment.create({
+        candidate: req.user.id,
+        testSession: user.assignedTest,
+        testType: 'MCQ',
+        status: 'completed',
+        isActive: true,
+        score,
+        totalQuestions,
+        assignedAt: user.createdAt || new Date(),
+        startedAt: user.testStartTime || new Date(),
+        completedAt: new Date(),
+        testStartTime: user.testStartTime,
+        testDuration: user.testDuration,
+      });
+    }
     
     res.json({ 
       msg: 'MCQ answers submitted successfully',

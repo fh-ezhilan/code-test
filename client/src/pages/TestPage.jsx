@@ -19,6 +19,8 @@ import {
   Tab,
   IconButton,
   Divider,
+  Snackbar,
+  Alert,
 } from '@mui/material';
 import { 
   PlayArrow as RunIcon, 
@@ -40,11 +42,27 @@ const TestPage = () => {
   const [timeRemaining, setTimeRemaining] = useState(null); // Time in seconds
   const [testResult, setTestResult] = useState(null);
   const [isRunning, setIsRunning] = useState(false);
+  const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'info' });
   const editorRef = useRef(null);
   const navigate = useNavigate();
   const { logout, user } = useAuth();
 
   const handleLogout = async () => {
+    // Submit the code before logging out
+    if (editorRef.current && program?._id) {
+      const currentCode = editorRef.current.getValue();
+      try {
+        // Always submit the test (even with empty code) to mark it as completed
+        await axios.post('/api/candidate/test/submit', {
+          programId: program._id,
+          code: currentCode || '',
+          language,
+        }, { withCredentials: true });
+      } catch (err) {
+        console.error('Error submitting code on logout:', err);
+      }
+    }
+    
     await logout();
     navigate('/login');
   };
@@ -288,7 +306,7 @@ const TestPage = () => {
         navigate('/submission-success');
       } catch (err) {
         console.error(err);
-        alert('Failed to submit solution.');
+        setSnackbar({ open: true, message: 'Failed to submit solution.', severity: 'error' });
       }
     }
   };
@@ -698,6 +716,21 @@ const TestPage = () => {
           )}
         </Box>
       </Box>
+      
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={5000}
+        onClose={() => setSnackbar({ ...snackbar, open: false })}
+        anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+      >
+        <Alert 
+          onClose={() => setSnackbar({ ...snackbar, open: false })} 
+          severity={snackbar.severity}
+          sx={{ width: '100%' }}
+        >
+          {snackbar.message}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 };

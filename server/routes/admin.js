@@ -28,4 +28,11 @@ router.post('/admins/bulk', isAdmin, upload.single('adminsFile'), adminControlle
 router.put('/admin/:id', isAdmin, adminController.updateAdmin);
 router.delete('/admin/:id', isAdmin, adminController.deleteAdmin);
 
+// Test assignment routes
+router.get('/candidate/:candidateId/test-history', isAdmin, adminController.getCandidateTestHistory);
+router.post('/test-assignment', isAdmin, adminController.assignTestToCandidate);
+router.put('/test-assignment/:assignmentId/set-active', isAdmin, adminController.setActiveTest);
+router.get('/test-assignment/:assignmentId/submission', isAdmin, adminController.getTestAssignmentSubmission);
+router.delete('/test-assignment/:assignmentId', isAdmin, adminController.deleteTestAssignment);
+
 module.exports = router;

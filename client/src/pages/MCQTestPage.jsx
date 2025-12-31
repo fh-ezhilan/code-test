@@ -20,6 +20,8 @@ import {
   DialogActions,
   Chip,
   LinearProgress,
+  Snackbar,
+  Alert,
 } from '@mui/material';
 import { Logout as LogoutIcon, Send as SendIcon } from '@mui/icons-material';
 
@@ -29,10 +31,50 @@ const MCQTestPage = () => {
   const [timeRemaining, setTimeRemaining] = useState(null);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'info' });
   const navigate = useNavigate();
-  const { logout, user } = useAuth();
+  const { logout, user, loading: authLoading } = useAuth();
+  
+  // Load answers from localStorage when user is available
+  useEffect(() => {
+    const userId = user?.id || user?._id;
+    
+    if (!authLoading && userId) {
+      const storageKey = `mcq_answers_${userId}`;
+      const savedAnswers = localStorage.getItem(storageKey);
+      if (savedAnswers) {
+        try {
+          const parsed = JSON.parse(savedAnswers);
+          setAnswers(parsed);
+        } catch (err) {
+          console.error('Failed to parse saved answers:', err);
+        }
+      }
+    }
+  }, [user, authLoading]);
 
   const handleLogout = async () => {
+    // Submit the test before logging out
+    const answersArray = Object.entries(answers).map(([questionId, selectedOption]) => ({
+      questionId,
+      selectedOption,
+    }));
+
+    try {
+      // Always submit the test (even with 0 answers) to mark it as completed
+      await axios.post('/api/candidate/test/mcq/submit', {
+        answers: answersArray,
+      }, { withCredentials: true });
+      
+      // Clear localStorage
+      const userId = user?.id || user?._id;
+      if (userId) {
+        localStorage.removeItem(`mcq_answers_${userId}`);
+      }
+    } catch (err) {
+      console.error('Error submitting test on logout:', err);
+    }
+    
     await logout();
     navigate('/login');
   };
@@ -57,6 +99,12 @@ const MCQTestPage = () => {
       await axios.post('/api/candidate/test/mcq/submit', {
         answers: answersArray,
       }, { withCredentials: true });
+      // Clear localStorage after successful submission
+      const userId = user?.id || user?._id;
+      if (userId) {
+        const storageKey = `mcq_answers_${userId}`;
+        localStorage.removeItem(storageKey);
+      }
       navigate('/test-completed');
     } catch (err) {
       console.error('Auto-submit error:', err);
@@ -121,10 +169,18 @@ const MCQTestPage = () => {
   }, [timeRemaining]);
 
   const handleAnswerChange = (questionId, selectedOption) => {
-    setAnswers(prev => ({
-      ...prev,
+    const updatedAnswers = {
+      ...answers,
       [questionId]: parseInt(selectedOption),
-    }));
+    };
+    setAnswers(updatedAnswers);
+    
+    // Save to localStorage immediately
+    const userId = user?.id || user?._id;
+    if (userId) {
+      const storageKey = `mcq_answers_${userId}`;
+      localStorage.setItem(storageKey, JSON.stringify(updatedAnswers));
+    }
   };
 
   const handleSubmit = () => {
@@ -143,10 +199,16 @@ const MCQTestPage = () => {
       await axios.post('/api/candidate/test/mcq/submit', {
         answers: answersArray,
       }, { withCredentials: true });
+      // Clear localStorage after successful submission
+      const userId = user?.id || user?._id;
+      if (userId) {
+        const storageKey = `mcq_answers_${userId}`;
+        localStorage.removeItem(storageKey);
+      }
       navigate('/test-completed');
     } catch (err) {
       console.error('Submit error:', err);
-      alert('Failed to submit answers. Please try again.');
+      setSnackbar({ open: true, message: 'Failed to submit answers. Please try again.', severity: 'error' });
     }
   };
 
@@ -276,6 +338,21 @@ const MCQTestPage = () => {
           </Button>
         </DialogActions>
       </Dialog>
+      
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={5000}
+        onClose={() => setSnackbar({ ...snackbar, open: false })}
+        anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+      >
+        <Alert 
+          onClose={() => setSnackbar({ ...snackbar, open: false })} 
+          severity={snackbar.severity}
+          sx={{ width: '100%' }}
+        >
+          {snackbar.message}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 };

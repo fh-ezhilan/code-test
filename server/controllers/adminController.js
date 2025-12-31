@@ -2,6 +2,7 @@ const Program = require('../models/Program');
 const MCQQuestion = require('../models/MCQQuestion');
 const MCQAnswer = require('../models/MCQAnswer');
 const TestSession = require('../models/TestSession');
+const TestAssignment = require('../models/TestAssignment');
 const User = require('../models/User');
 const bcrypt = require('bcryptjs');
 const xlsx = require('xlsx');
@@ -319,18 +320,50 @@ exports.getCandidates = async (req, res) => {
       .populate('assignedProgram', 'title')
       .populate('assignedTest', 'name testType');
     
-    // Fetch MCQ answers for each candidate
+    // Fetch all test assignments and calculate average score for each candidate
     const candidatesWithScores = await Promise.all(
       candidates.map(async (candidate) => {
         const candidateObj = candidate.toObject();
         
-        // If the candidate completed an MCQ test, fetch their score
-        if (candidate.testStatus === 'completed' && candidate.assignedTest?.testType === 'MCQ') {
-          const mcqAnswer = await MCQAnswer.findOne({ candidate: candidate._id });
-          if (mcqAnswer) {
-            candidateObj.mcqScore = mcqAnswer.score;
-            candidateObj.mcqTotalQuestions = mcqAnswer.totalQuestions;
+        // Get all completed test assignments with scores
+        const completedAssignments = await TestAssignment.find({
+          candidate: candidate._id,
+          status: 'completed',
+          score: { $exists: true }
+        });
+        
+        // Also check for legacy MCQ answers (tests completed before TestAssignment system)
+        const legacyMCQAnswers = await MCQAnswer.find({
+          candidate: candidate._id
+        });
+        
+        // Collect all scores (from TestAssignments and legacy MCQ answers)
+        const allScores = [];
+        
+        // Add scores from TestAssignments
+        completedAssignments.forEach(assignment => {
+          const percentage = (assignment.score / assignment.totalQuestions) * 100;
+          allScores.push(percentage);
+        });
+        
+        // Add scores from legacy MCQ answers that don't have TestAssignments
+        for (const mcqAnswer of legacyMCQAnswers) {
+          // Check if this MCQ answer already has a TestAssignment
+          const hasAssignment = completedAssignments.some(
+            a => a.testSession && a.testSession.toString() === mcqAnswer.testSession.toString()
+          );
+          
+          if (!hasAssignment) {
+            const percentage = (mcqAnswer.score / mcqAnswer.totalQuestions) * 100;
+            allScores.push(percentage);
           }
+        }
+        
+        // Calculate average score as percentage
+        if (allScores.length > 0) {
+          const totalPercentage = allScores.reduce((sum, percentage) => sum + percentage, 0);
+          candidateObj.averageScore = Math.round(totalPercentage / allScores.length);
+          candidateObj.completedTests = allScores.length;
         }
         
         return candidateObj;
@@ -370,8 +403,12 @@ exports.deleteTestSession = async (req, res) => {
 
 exports.updateCandidate = async (req, res) => {
   try {
-    const { testSessionId } = req.body;
-    console.log('Update candidate request:', { candidateId: req.params.id, testSessionId });
+    const { password } = req.body;
+    console.log('Reset password request for candidate:', req.params.id);
+    
+    if (!password || password.trim().length === 0) {
+      return res.status(400).json({ msg: 'Password is required' });
+    }
     
     const candidate = await User.findById(req.params.id);
     
@@ -385,26 +422,16 @@ exports.updateCandidate = async (req, res) => {
       return res.status(400).json({ msg: 'Can only update candidates' });
     }
 
-    // Verify test session exists
-    if (testSessionId) {
-      const testSession = await TestSession.findById(testSessionId);
-      if (!testSession) {
-        console.log('Test session not found:', testSessionId);
-        return res.status(400).json({ msg: 'Test session not found' });
-      }
-      candidate.assignedTest = testSessionId;
-      // Reset assigned program and test timing since test changed
-      candidate.assignedProgram = null;
-      candidate.testStatus = 'not-started';
-      candidate.testStartTime = null;
-      candidate.testDuration = null;
-    }
+    // Hash and update password only
+    const bcrypt = require('bcryptjs');
+    const salt = await bcrypt.genSalt(10);
+    candidate.password = await bcrypt.hash(password, salt);
 
     await candidate.save();
-    console.log('Candidate updated successfully:', candidate.username);
-    res.json({ msg: 'Candidate updated successfully' });
+    console.log('Password reset successfully for candidate:', candidate.username);
+    res.json({ msg: 'Password reset successfully' });
   } catch (err) {
-    console.error('Error updating candidate:', err.message, err);
+    console.error('Error resetting password:', err.message, err);
     res.status(500).json({ msg: 'Server Error', error: err.message });
   }
 };
@@ -577,6 +604,257 @@ exports.deleteAdmin = async (req, res) => {
 
     await User.findByIdAndDelete(req.params.id);
     res.json({ msg: 'Admin deleted successfully' });
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).send('Server Error');
+  }
+};
+
+// Test Assignment endpoints
+exports.getCandidateTestHistory = async (req, res) => {
+  try {
+    const { candidateId } = req.params;
+    
+    // Fetch existing test assignments
+    const assignments = await TestAssignment.find({ candidate: candidateId })
+      .populate('testSession', 'name testType duration')
+      .populate('program', 'title')
+      .sort('-assignedAt');
+    
+    // Check if candidate has an assigned test without a TestAssignment record (legacy data)
+    const candidate = await User.findById(candidateId)
+      .populate('assignedTest', 'name testType duration')
+      .populate('assignedProgram', 'title');
+    
+    if (candidate && candidate.assignedTest) {
+      // Check if there's already a TestAssignment for this test
+      const existingAssignment = assignments.find(
+        a => a.testSession && a.testSession._id.toString() === candidate.assignedTest._id.toString()
+      );
+      
+      // If no TestAssignment exists, create one
+      if (!existingAssignment) {
+        const testSession = candidate.assignedTest;
+        
+        // Check if there's an MCQ score for this test
+        let score, totalQuestions;
+        if (candidate.testStatus === 'completed' && testSession.testType === 'MCQ') {
+          const mcqAnswer = await MCQAnswer.findOne({
+            candidate: candidateId,
+            testSession: testSession._id
+          }).sort('-submittedAt');
+          
+          if (mcqAnswer) {
+            score = mcqAnswer.score;
+            totalQuestions = mcqAnswer.totalQuestions;
+          }
+        }
+        
+        // Create TestAssignment record for legacy data
+        const newAssignment = new TestAssignment({
+          candidate: candidateId,
+          testSession: testSession._id,
+          program: candidate.assignedProgram?._id,
+          testType: testSession.testType,
+          status: candidate.testStatus,
+          isActive: true,
+          score,
+          totalQuestions,
+          assignedAt: new Date(),
+          startedAt: candidate.testStartTime,
+          completedAt: candidate.testStatus === 'completed' ? new Date() : null,
+          testStartTime: candidate.testStartTime,
+          testDuration: candidate.testDuration,
+        });
+        
+        await newAssignment.save();
+        
+        // Add to assignments array
+        const populatedAssignment = await TestAssignment.findById(newAssignment._id)
+          .populate('testSession', 'name testType duration')
+          .populate('program', 'title');
+        
+        assignments.unshift(populatedAssignment);
+      }
+    }
+    
+    res.json(assignments);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).send('Server Error');
+  }
+};
+
+exports.assignTestToCandidate = async (req, res) => {
+  try {
+    const { candidateId, testSessionId, makeActive } = req.body;
+    
+    const candidate = await User.findById(candidateId);
+    if (!candidate || candidate.role !== 'candidate') {
+      return res.status(404).json({ msg: 'Candidate not found' });
+    }
+    
+    const testSession = await TestSession.findById(testSessionId);
+    if (!testSession) {
+      return res.status(404).json({ msg: 'Test session not found' });
+    }
+    
+    // If making this test active, deactivate all other tests for this candidate
+    if (makeActive) {
+      await TestAssignment.updateMany(
+        { candidate: candidateId, isActive: true },
+        { isActive: false }
+      );
+    }
+    
+    // Create new test assignment
+    const assignment = new TestAssignment({
+      candidate: candidateId,
+      testSession: testSessionId,
+      testType: testSession.testType,
+      isActive: makeActive || false,
+    });
+    
+    await assignment.save();
+    
+    // Update candidate's assignedTest if making active
+    if (makeActive) {
+      candidate.assignedTest = testSessionId;
+      candidate.testStatus = 'not-started';
+      await candidate.save();
+    }
+    
+    const populatedAssignment = await TestAssignment.findById(assignment._id)
+      .populate('testSession', 'name testType duration')
+      .populate('program', 'title');
+    
+    res.json(populatedAssignment);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).send('Server Error');
+  }
+};
+
+exports.setActiveTest = async (req, res) => {
+  try {
+    const { assignmentId } = req.params;
+    
+    const assignment = await TestAssignment.findById(assignmentId);
+    if (!assignment) {
+      return res.status(404).json({ msg: 'Test assignment not found' });
+    }
+    
+    // Deactivate all other tests for this candidate
+    await TestAssignment.updateMany(
+      { candidate: assignment.candidate, isActive: true },
+      { isActive: false }
+    );
+    
+    // Activate this test
+    assignment.isActive = true;
+    
+    // Only allow setting as active if not completed
+    if (assignment.status === 'completed') {
+      return res.status(400).json({ msg: 'Cannot activate a completed test' });
+    }
+    
+    // Reset status to not-started if making active
+    if (assignment.status === 'not-started') {
+      assignment.status = 'not-started';
+    }
+    
+    await assignment.save();
+    
+    // Update candidate's assignedTest
+    const candidate = await User.findById(assignment.candidate);
+    candidate.assignedTest = assignment.testSession;
+    candidate.testStatus = assignment.status;
+    candidate.assignedProgram = assignment.program || null;
+    await candidate.save();
+    
+    const populatedAssignment = await TestAssignment.findById(assignment._id)
+      .populate('testSession', 'name testType duration')
+      .populate('program', 'title');
+    
+    res.json(populatedAssignment);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).send('Server Error');
+  }
+};
+
+exports.getTestAssignmentSubmission = async (req, res) => {
+  try {
+    const { assignmentId } = req.params;
+    
+    const assignment = await TestAssignment.findById(assignmentId)
+      .populate('testSession', 'name testType')
+      .populate('program', 'title')
+      .populate('candidate', 'username');
+    
+    if (!assignment) {
+      return res.status(404).json({ msg: 'Test assignment not found' });
+    }
+    
+    if (assignment.status !== 'completed') {
+      return res.status(400).json({ msg: 'Test not completed yet' });
+    }
+    
+    const result = {
+      testType: assignment.testType,
+      testSession: assignment.testSession,
+      candidate: assignment.candidate,
+    };
+    
+    if (assignment.testType === 'Coding') {
+      const Solution = require('../models/Solution');
+      const solution = await Solution.findOne({
+        candidate: assignment.candidate._id,
+        program: assignment.program
+      });
+      
+      result.solution = solution;
+      result.program = assignment.program;
+    } else if (assignment.testType === 'MCQ') {
+      const mcqAnswer = await MCQAnswer.findOne({
+        candidate: assignment.candidate._id,
+        testSession: assignment.testSession._id
+      });
+      
+      const testSession = await TestSession.findById(assignment.testSession._id)
+        .populate('mcqQuestions');
+      
+      result.mcqAnswer = mcqAnswer;
+      result.questions = testSession.mcqQuestions;
+    }
+    
+    res.json(result);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).send('Server Error');
+  }
+};
+
+exports.deleteTestAssignment = async (req, res) => {
+  try {
+    const { assignmentId } = req.params;
+    
+    const assignment = await TestAssignment.findById(assignmentId);
+    if (!assignment) {
+      return res.status(404).json({ msg: 'Test assignment not found' });
+    }
+    
+    if (assignment.isActive) {
+      await User.findByIdAndUpdate(assignment.candidate, {
+        assignedTest: null,
+        assignedProgram: null,
+        testStatus: 'not-started'
+      });
+    }
+    
+    await TestAssignment.findByIdAndDelete(assignmentId);
+    
+    res.json({ msg: 'Test assignment deleted successfully' });
   } catch (err) {
     console.error(err.message);
     res.status(500).send('Server Error');
