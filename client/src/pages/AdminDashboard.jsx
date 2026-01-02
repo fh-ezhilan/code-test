@@ -1873,6 +1873,10 @@ const AdminDashboard = () => {
                           <Typography variant="body2" fontWeight={600}>
                             {assignment.score}/{assignment.totalQuestions} ({Math.round((assignment.score / assignment.totalQuestions) * 100)}%)
                           </Typography>
+                        ) : assignment.testType === 'Coding' && assignment.aiScore !== undefined ? (
+                          <Typography variant="body2" fontWeight={600}>
+                            {assignment.aiScore}/100
+                          </Typography>
                         ) : (
                           <Typography variant="body2" color="text.secondary">-</Typography>
                         )}
@@ -1883,6 +1887,12 @@ const AdminDashboard = () => {
                             label={Math.round((assignment.score / assignment.totalQuestions) * 100) >= 75 ? 'Pass' : 'Fail'}
                             size="small"
                             color={Math.round((assignment.score / assignment.totalQuestions) * 100) >= 75 ? 'success' : 'error'}
+                          />
+                        ) : assignment.testType === 'Coding' && assignment.aiScore !== undefined ? (
+                          <Chip 
+                            label={assignment.aiScore >= 75 ? 'Pass' : 'Fail'}
+                            size="small"
+                            color={assignment.aiScore >= 75 ? 'success' : 'error'}
                           />
                         ) : (
                           <Typography variant="body2" color="text.secondary">-</Typography>
@@ -2030,6 +2040,93 @@ const AdminDashboard = () => {
               </Typography>
               <Typography variant="subtitle2" gutterBottom color="text.secondary">
                 Language: {viewingSubmission?.solution?.language}
+              </Typography>
+              
+              {/* AI Evaluation Section */}
+              {viewingSubmission?.solution?.aiEvaluation && (
+                <Box sx={{ mt: 3, mb: 3 }}>
+                  <Typography variant="h6" gutterBottom color="primary">
+                    AI Evaluation by Gemini 2.5 Flash
+                  </Typography>
+                  <Paper elevation={3} sx={{ p: 2, bgcolor: '#f5f5f5' }}>
+                    <Grid container spacing={2}>
+                      <Grid item xs={6} sm={3}>
+                        <Typography variant="body2" color="text.secondary">Overall Score</Typography>
+                        <Typography variant="h5" color="primary">
+                          {viewingSubmission.solution.aiEvaluation.overallScore}/100
+                        </Typography>
+                      </Grid>
+                      <Grid item xs={6} sm={3}>
+                        <Typography variant="body2" color="text.secondary">Correctness</Typography>
+                        <Typography variant="h6">
+                          {viewingSubmission.solution.aiEvaluation.correctnessScore || 'N/A'}
+                        </Typography>
+                      </Grid>
+                      <Grid item xs={6} sm={3}>
+                        <Typography variant="body2" color="text.secondary">Code Quality</Typography>
+                        <Typography variant="h6">
+                          {viewingSubmission.solution.aiEvaluation.codeQualityScore || 'N/A'}
+                        </Typography>
+                      </Grid>
+                      <Grid item xs={6} sm={3}>
+                        <Typography variant="body2" color="text.secondary">Standards</Typography>
+                        <Typography variant="h6">
+                          {viewingSubmission.solution.aiEvaluation.codingStandardsScore || 'N/A'}
+                        </Typography>
+                      </Grid>
+                    </Grid>
+                    
+                    <Box sx={{ mt: 2 }}>
+                      <Typography variant="body2" fontWeight={600} gutterBottom>Summary:</Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        {viewingSubmission.solution.aiEvaluation.summary}
+                      </Typography>
+                    </Box>
+                    
+                    {viewingSubmission.solution.aiEvaluation.strengths?.length > 0 && (
+                      <Box sx={{ mt: 2 }}>
+                        <Typography variant="body2" fontWeight={600} gutterBottom color="success.main">
+                          Strengths:
+                        </Typography>
+                        <ul style={{ margin: '4px 0', paddingLeft: '20px' }}>
+                          {viewingSubmission.solution.aiEvaluation.strengths.map((s, i) => (
+                            <li key={i}><Typography variant="body2">{s}</Typography></li>
+                          ))}
+                        </ul>
+                      </Box>
+                    )}
+                    
+                    {viewingSubmission.solution.aiEvaluation.weaknesses?.length > 0 && (
+                      <Box sx={{ mt: 2 }}>
+                        <Typography variant="body2" fontWeight={600} gutterBottom color="error.main">
+                          Areas for Improvement:
+                        </Typography>
+                        <ul style={{ margin: '4px 0', paddingLeft: '20px' }}>
+                          {viewingSubmission.solution.aiEvaluation.weaknesses.map((w, i) => (
+                            <li key={i}><Typography variant="body2">{w}</Typography></li>
+                          ))}
+                        </ul>
+                      </Box>
+                    )}
+                    
+                    {viewingSubmission.solution.aiEvaluation.suggestions?.length > 0 && (
+                      <Box sx={{ mt: 2 }}>
+                        <Typography variant="body2" fontWeight={600} gutterBottom color="info.main">
+                          Suggestions:
+                        </Typography>
+                        <ul style={{ margin: '4px 0', paddingLeft: '20px' }}>
+                          {viewingSubmission.solution.aiEvaluation.suggestions.map((s, i) => (
+                            <li key={i}><Typography variant="body2">{s}</Typography></li>
+                          ))}
+                        </ul>
+                      </Box>
+                    )}
+                  </Paper>
+                </Box>
+              )}
+              
+              <Typography variant="h6" gutterBottom sx={{ mt: 2 }}>
+                Submitted Code
               </Typography>
               <Paper elevation={3} sx={{ p: 2, bgcolor: '#1e1e1e', mt: 2 }}>
                 <pre style={{ 

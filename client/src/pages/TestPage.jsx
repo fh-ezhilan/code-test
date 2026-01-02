@@ -21,6 +21,11 @@ import {
   Divider,
   Snackbar,
   Alert,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogContentText,
+  DialogActions,
 } from '@mui/material';
 import { 
   PlayArrow as RunIcon, 
@@ -43,6 +48,7 @@ const TestPage = () => {
   const [testResult, setTestResult] = useState(null);
   const [isRunning, setIsRunning] = useState(false);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'info' });
+  const [confirmDialog, setConfirmDialog] = useState(false);
   const editorRef = useRef(null);
   const navigate = useNavigate();
   const { logout, user } = useAuth();
@@ -220,6 +226,39 @@ const TestPage = () => {
 
   function handleEditorDidMount(editor, monaco) {
     editorRef.current = editor;
+    
+    // Configure JavaScript/TypeScript features for better IntelliSense
+    if (language === 'javascript' || language === 'typescript') {
+      monaco.languages.typescript.javascriptDefaults.setCompilerOptions({
+        target: monaco.languages.typescript.ScriptTarget.ES2015,
+        allowNonTsExtensions: true,
+        moduleResolution: monaco.languages.typescript.ModuleResolutionKind.NodeJs,
+        module: monaco.languages.typescript.ModuleKind.CommonJS,
+        noEmit: true,
+        esModuleInterop: true,
+        allowJs: true,
+        checkJs: false,
+      });
+
+      // Enable diagnostics for better error detection
+      monaco.languages.typescript.javascriptDefaults.setDiagnosticsOptions({
+        noSemanticValidation: false,
+        noSyntaxValidation: false,
+      });
+
+      // Add common Node.js/ES6 type definitions for better IntelliSense
+      monaco.languages.typescript.javascriptDefaults.addExtraLib(`
+        declare const console: {
+          log(...args: any[]): void;
+          error(...args: any[]): void;
+          warn(...args: any[]): void;
+        };
+        declare function setTimeout(callback: () => void, ms: number): number;
+        declare function setInterval(callback: () => void, ms: number): number;
+        declare function clearTimeout(id: number): void;
+        declare function clearInterval(id: number): void;
+      `, 'ts:filename/global.d.ts');
+    }
   }
 
   useEffect(() => {
@@ -271,17 +310,10 @@ const TestPage = () => {
         const res = await axios.post('/api/candidate/test/run', {
           code: currentCode,
           language,
-          input: '' // Can be extended to accept custom input
+          programId: program._id
         }, { withCredentials: true });
         
-        setTestResult({
-          success: true,
-          output: res.data.stdout || '',
-          error: res.data.stderr || res.data.compile_output || '',
-          status: res.data.status,
-          time: res.data.time,
-          memory: res.data.memory
-        });
+        setTestResult(res.data);
       } catch (err) {
         console.error('Run error:', err);
         setTestResult({
@@ -294,16 +326,23 @@ const TestPage = () => {
     }
   };
 
-  const handleSubmit = async () => {
+  const handleSubmit = () => {
+    setConfirmDialog(true);
+  };
+
+  const handleConfirmSubmit = async () => {
+    setConfirmDialog(false);
     if (editorRef.current) {
       const currentCode = editorRef.current.getValue();
       try {
+        setSnackbar({ open: true, message: 'Code is being submitted...', severity: 'info' });
         await axios.post('/api/candidate/test/submit', {
           programId: program._id,
           code: currentCode,
           language,
         }, { withCredentials: true });
-        navigate('/submission-success');
+        setSnackbar({ open: true, message: 'Test submitted successfully!', severity: 'success' });
+        setTimeout(() => navigate('/submission-success'), 1500);
       } catch (err) {
         console.error(err);
         setSnackbar({ open: true, message: 'Failed to submit solution.', severity: 'error' });
@@ -507,6 +546,34 @@ const TestPage = () => {
                 lineNumbers: 'on',
                 scrollBeyondLastLine: false,
                 automaticLayout: true,
+                suggestOnTriggerCharacters: true,
+                quickSuggestions: {
+                  other: true,
+                  comments: false,
+                  strings: true,
+                },
+                quickSuggestionsDelay: 100,
+                parameterHints: {
+                  enabled: true,
+                },
+                suggest: {
+                  snippetsPreventQuickSuggestions: false,
+                  showMethods: true,
+                  showFunctions: true,
+                  showConstructors: true,
+                  showFields: true,
+                  showVariables: true,
+                  showClasses: true,
+                  showStructs: true,
+                  showInterfaces: true,
+                  showModules: true,
+                  showProperties: true,
+                  showKeywords: true,
+                  showSnippets: true,
+                },
+                acceptSuggestionOnCommitCharacter: true,
+                acceptSuggestionOnEnter: 'on',
+                tabCompletion: 'on',
               }}
             />
           </Box>
@@ -567,20 +634,55 @@ const TestPage = () => {
             <Box sx={{ flex: 1, overflow: 'auto', p: 2 }}>
               {bottomTab === 0 && (
                 <Box>
-                  <Typography sx={{ color: '#666', fontSize: '13px', mb: 1 }}>
-                    Case 1
-                  </Typography>
-                  <Box sx={{ 
-                    bgcolor: '#f5f5f5', 
-                    p: 2, 
-                    borderRadius: 1,
-                    border: '1px solid #e0e0e0',
-                    fontFamily: 'monospace',
-                    fontSize: '13px',
-                    color: '#000'
-                  }}>
-                    nums = [2,7,11,15], target = 9
-                  </Box>
+                  {program?.testCases && program.testCases.length > 0 ? (
+                    program.testCases.map((testCase, index) => (
+                      <Box key={index} sx={{ mb: 3 }}>
+                        <Typography sx={{ color: '#666', fontSize: '13px', mb: 1, fontWeight: 600 }}>
+                          Test Case {index + 1}
+                        </Typography>
+                        
+                        <Box sx={{ mb: 2 }}>
+                          <Typography sx={{ color: '#666', fontSize: '12px', mb: 0.5 }}>
+                            Input:
+                          </Typography>
+                          <Box sx={{ 
+                            bgcolor: '#f5f5f5', 
+                            p: 2, 
+                            borderRadius: 1,
+                            border: '1px solid #e0e0e0',
+                            fontFamily: 'monospace',
+                            fontSize: '13px',
+                            color: '#000',
+                            whiteSpace: 'pre-wrap'
+                          }}>
+                            {testCase.input || '(no input)'}
+                          </Box>
+                        </Box>
+                        
+                        <Box>
+                          <Typography sx={{ color: '#666', fontSize: '12px', mb: 0.5 }}>
+                            Expected Output:
+                          </Typography>
+                          <Box sx={{ 
+                            bgcolor: '#f5f5f5', 
+                            p: 2, 
+                            borderRadius: 1,
+                            border: '1px solid #e0e0e0',
+                            fontFamily: 'monospace',
+                            fontSize: '13px',
+                            color: '#000',
+                            whiteSpace: 'pre-wrap'
+                          }}>
+                            {testCase.output}
+                          </Box>
+                        </Box>
+                      </Box>
+                    ))
+                  ) : (
+                    <Typography sx={{ color: '#666', fontSize: '13px' }}>
+                      No test cases available.
+                    </Typography>
+                  )}
                 </Box>
               )}
               {bottomTab === 1 && (
@@ -602,63 +704,191 @@ const TestPage = () => {
                   
                   {!isRunning && testResult && (
                     <Box>
-                      <Box sx={{ mb: 2 }}>
-                        <Typography sx={{ 
-                          color: testResult.success ? '#2e7d32' : '#d32f2f',
-                          fontSize: '13px',
-                          fontWeight: 600,
-                          mb: 1
-                        }}>
-                          Status: {testResult.status || (testResult.success ? 'Success' : 'Error')}
-                        </Typography>
-                        {testResult.time && (
-                          <Typography sx={{ color: '#666', fontSize: '12px' }}>
-                            Time: {testResult.time}s | Memory: {testResult.memory}KB
-                          </Typography>
-                        )}
-                      </Box>
-                      
-                      {testResult.output && (
-                        <Box sx={{ mb: 2 }}>
-                          <Typography sx={{ color: '#333', fontSize: '13px', fontWeight: 600, mb: 0.5 }}>
-                            Output:
-                          </Typography>
-                          <Box sx={{ 
-                            bgcolor: '#f5f5f5', 
-                            p: 2, 
-                            borderRadius: 1,
-                            border: '1px solid #e0e0e0',
-                            fontFamily: 'monospace',
-                            fontSize: '13px',
-                            color: '#000',
-                            whiteSpace: 'pre-wrap',
-                            maxHeight: '200px',
-                            overflow: 'auto'
-                          }}>
-                            {testResult.output}
-                          </Box>
-                        </Box>
-                      )}
-                      
-                      {testResult.error && (
+                      {testResult.testResults ? (
+                        // Display test case results
                         <Box>
-                          <Typography sx={{ color: '#d32f2f', fontSize: '13px', fontWeight: 600, mb: 0.5 }}>
-                            Error:
-                          </Typography>
-                          <Box sx={{ 
-                            bgcolor: '#ffebee', 
-                            p: 2, 
-                            borderRadius: 1,
-                            border: '1px solid #ef5350',
-                            fontFamily: 'monospace',
-                            fontSize: '13px',
-                            color: '#c62828',
-                            whiteSpace: 'pre-wrap',
-                            maxHeight: '200px',
-                            overflow: 'auto'
-                          }}>
-                            {testResult.error}
+                          <Box sx={{ mb: 2 }}>
+                            <Typography sx={{ 
+                              color: testResult.testResults.passedTests === testResult.testResults.totalTests ? '#2e7d32' : '#d32f2f',
+                              fontSize: '14px',
+                              fontWeight: 600,
+                              mb: 1
+                            }}>
+                              {testResult.testResults.passedTests === testResult.testResults.totalTests ? '✓' : '✗'} {testResult.testResults.passedTests}/{testResult.testResults.totalTests} Test Cases Passed
+                            </Typography>
+                            <Typography sx={{ color: '#666', fontSize: '13px' }}>
+                              Score: {testResult.testResults.score}%
+                            </Typography>
                           </Box>
+                          
+                          {testResult.testResults.results.map((result, index) => (
+                            <Box key={index} sx={{ mb: 2, pb: 2, borderBottom: index < testResult.testResults.results.length - 1 ? '1px solid #e0e0e0' : 'none' }}>
+                              <Typography sx={{ 
+                                color: result.passed ? '#2e7d32' : '#d32f2f',
+                                fontSize: '13px',
+                                fontWeight: 600,
+                                mb: 1
+                              }}>
+                                {result.passed ? '✓' : '✗'} Test Case {result.testCase} - {result.passed ? 'Passed' : 'Failed'}
+                              </Typography>
+                              
+                              <Box sx={{ mb: 1 }}>
+                                <Typography sx={{ color: '#666', fontSize: '12px', mb: 0.5 }}>
+                                  Input:
+                                </Typography>
+                                <Box sx={{ 
+                                  bgcolor: '#f5f5f5', 
+                                  p: 1.5, 
+                                  borderRadius: 1,
+                                  border: '1px solid #e0e0e0',
+                                  fontFamily: 'monospace',
+                                  fontSize: '12px',
+                                  color: '#000',
+                                  whiteSpace: 'pre-wrap'
+                                }}>
+                                  {result.input || '(empty)'}
+                                </Box>
+                              </Box>
+                              
+                              <Box sx={{ mb: 1 }}>
+                                <Typography sx={{ color: '#666', fontSize: '12px', mb: 0.5 }}>
+                                  Expected Output:
+                                </Typography>
+                                <Box sx={{ 
+                                  bgcolor: '#f5f5f5', 
+                                  p: 1.5, 
+                                  borderRadius: 1,
+                                  border: '1px solid #e0e0e0',
+                                  fontFamily: 'monospace',
+                                  fontSize: '12px',
+                                  color: '#000',
+                                  whiteSpace: 'pre-wrap'
+                                }}>
+                                  {result.expectedOutput}
+                                </Box>
+                              </Box>
+                              
+                              <Box sx={{ mb: 1 }}>
+                                <Typography sx={{ color: '#666', fontSize: '12px', mb: 0.5 }}>
+                                  Your Output:
+                                </Typography>
+                                <Box sx={{ 
+                                  bgcolor: result.passed ? '#f1f8f4' : '#ffebee', 
+                                  p: 1.5, 
+                                  borderRadius: 1,
+                                  border: result.passed ? '1px solid #2e7d32' : '1px solid #ef5350',
+                                  fontFamily: 'monospace',
+                                  fontSize: '12px',
+                                  color: result.passed ? '#1b5e20' : '#c62828',
+                                  whiteSpace: 'pre-wrap'
+                                }}>
+                                  {result.actualOutput || '(no output)'}
+                                </Box>
+                              </Box>
+                              
+                              {result.stderr && (
+                                <Box>
+                                  <Typography sx={{ color: '#d32f2f', fontSize: '12px', mb: 0.5 }}>
+                                    Error:
+                                  </Typography>
+                                  <Box sx={{ 
+                                    bgcolor: '#ffebee', 
+                                    p: 1.5, 
+                                    borderRadius: 1,
+                                    border: '1px solid #ef5350',
+                                    fontFamily: 'monospace',
+                                    fontSize: '12px',
+                                    color: '#c62828',
+                                    whiteSpace: 'pre-wrap',
+                                    maxHeight: '100px',
+                                    overflow: 'auto'
+                                  }}>
+                                    {result.stderr}
+                                  </Box>
+                                </Box>
+                              )}
+                              
+                              {result.compile_output && (
+                                <Box sx={{ mt: 1 }}>
+                                  <Typography sx={{ color: '#d32f2f', fontSize: '12px', mb: 0.5 }}>
+                                    Compilation Error:
+                                  </Typography>
+                                  <Box sx={{ 
+                                    bgcolor: '#ffebee', 
+                                    p: 1.5, 
+                                    borderRadius: 1,
+                                    border: '1px solid #ef5350',
+                                    fontFamily: 'monospace',
+                                    fontSize: '12px',
+                                    color: '#c62828',
+                                    whiteSpace: 'pre-wrap',
+                                    maxHeight: '100px',
+                                    overflow: 'auto'
+                                  }}>
+                                    {result.compile_output}
+                                  </Box>
+                                </Box>
+                              )}
+                            </Box>
+                          ))}
+                        </Box>
+                      ) : (
+                        // Display simple output for programs without test cases
+                        <Box>
+                          <Box sx={{ mb: 2 }}>
+                            <Typography sx={{ 
+                              color: testResult.success ? '#2e7d32' : '#d32f2f',
+                              fontSize: '13px',
+                              fontWeight: 600,
+                              mb: 1
+                            }}>
+                              Status: {testResult.status || (testResult.success ? 'Success' : 'Error')}
+                            </Typography>
+                          </Box>
+                          
+                          {testResult.stdout && (
+                            <Box sx={{ mb: 2 }}>
+                              <Typography sx={{ color: '#333', fontSize: '13px', fontWeight: 600, mb: 0.5 }}>
+                                Output:
+                              </Typography>
+                              <Box sx={{ 
+                                bgcolor: '#f5f5f5', 
+                                p: 2, 
+                                borderRadius: 1,
+                                border: '1px solid #e0e0e0',
+                                fontFamily: 'monospace',
+                                fontSize: '13px',
+                                color: '#000',
+                                whiteSpace: 'pre-wrap',
+                                maxHeight: '200px',
+                                overflow: 'auto'
+                              }}>
+                                {testResult.stdout}
+                              </Box>
+                            </Box>
+                          )}
+                          
+                          {(testResult.error || testResult.stderr || testResult.compile_output) && (
+                            <Box>
+                              <Typography sx={{ color: '#d32f2f', fontSize: '13px', fontWeight: 600, mb: 0.5 }}>
+                                Error:
+                              </Typography>
+                              <Box sx={{ 
+                                bgcolor: '#ffebee', 
+                                p: 2, 
+                                borderRadius: 1,
+                                border: '1px solid #ef5350',
+                                fontFamily: 'monospace',
+                                fontSize: '13px',
+                                color: '#c62828',
+                                whiteSpace: 'pre-wrap',
+                                maxHeight: '200px',
+                                overflow: 'auto'
+                              }}>
+                                {testResult.error || testResult.stderr || testResult.compile_output}
+                              </Box>
+                            </Box>
+                          )}
                         </Box>
                       )}
                     </Box>
@@ -731,7 +961,30 @@ const TestPage = () => {
           {snackbar.message}
         </Alert>
       </Snackbar>
-    </Box>
+      {/* Confirmation Dialog */}
+      <Dialog
+        open={confirmDialog}
+        onClose={() => setConfirmDialog(false)}
+        aria-labelledby="confirm-dialog-title"
+        aria-describedby="confirm-dialog-description"
+      >
+        <DialogTitle id="confirm-dialog-title">
+          Confirm Submission
+        </DialogTitle>
+        <DialogContent>
+          <DialogContentText id="confirm-dialog-description">
+            Are you sure you want to submit your code? Once submitted, you will not be able to make any changes.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setConfirmDialog(false)} color="inherit">
+            Cancel
+          </Button>
+          <Button onClick={handleConfirmSubmit} variant="contained" color="primary" autoFocus>
+            Submit
+          </Button>
+        </DialogActions>
+      </Dialog>    </Box>
   );
 };
 

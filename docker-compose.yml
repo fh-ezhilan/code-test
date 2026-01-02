@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  judge0-server:
+    image: judge0/judge0:1.13.0
+    volumes:
+      - ./judge0-data:/data
+    ports:
+      - "2358:2358"
+    privileged: true
+    environment:
+      - REDIS_HOST=judge0-redis
+      - REDIS_PORT=6379
+      - POSTGRES_HOST=judge0-db
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=judge0
+      - POSTGRES_PASSWORD=YourJudge0Password
+      - POSTGRES_DB=judge0
+    depends_on:
+      - judge0-db
+      - judge0-redis
+    restart: unless-stopped
+
+  judge0-db:
+    image: postgres:13
+    environment:
+      - POSTGRES_USER=judge0
+      - POSTGRES_PASSWORD=YourJudge0Password
+      - POSTGRES_DB=judge0
+    volumes:
+      - judge0-postgres:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  judge0-redis:
+    image: redis:6
+    command: redis-server --appendonly yes
+    volumes:
+      - judge0-redis:/data
+    restart: unless-stopped
+
+volumes:
+  judge0-postgres:
+  judge0-redis:

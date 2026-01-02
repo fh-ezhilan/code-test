@@ -88,20 +88,70 @@ exports.submitSolution = async (req, res) => {
   const { programId, code, language } = req.body;
   try {
     const User = require('../models/User');
+    const Program = require('../models/Program');
+    const judge0Service = require('../services/judge0Service');
+    const geminiService = require('../services/geminiService');
+    
     const user = await User.findById(req.user.id);
+    
+    // Fetch program with test cases
+    const program = await Program.findById(programId);
+    if (!program) {
+      return res.status(404).json({ msg: 'Program not found' });
+    }
+    
+    // Run code against test cases
+    let testResults = null;
+    let score = 0;
+    
+    if (program.testCases && program.testCases.length > 0) {
+      try {
+        testResults = await judge0Service.runTestCases(code, language, program.testCases);
+        score = testResults.score;
+      } catch (err) {
+        console.error('Test execution failed:', err);
+        return res.status(500).json({ 
+          msg: 'Failed to execute code',
+          error: err.message 
+        });
+      }
+    }
+
+    // Get AI evaluation from Gemini
+    let aiEvaluation = null;
+    if (testResults) {
+      try {
+        console.log('Starting Gemini AI evaluation...');
+        const geminiResult = await geminiService.evaluateCode(code, language, program, testResults);
+        aiEvaluation = {
+          ...geminiResult.evaluation,
+          aiModel: geminiResult.aiModel,
+          evaluatedAt: geminiResult.evaluatedAt,
+          rawResponse: geminiResult.rawResponse
+        };
+        // Use Gemini's overall score if available, otherwise use test score
+        score = aiEvaluation.overallScore || score;
+        console.log('Gemini evaluation completed. Overall score:', score);
+      } catch (err) {
+        console.error('Gemini evaluation failed:', err);
+        // Continue without AI evaluation
+      }
+    }
     
     const newSolution = new Solution({
       program: programId,
       candidate: req.user.id,
       code,
       language,
+      testResults,
+      aiEvaluation
     });
     const solution = await newSolution.save();
     
     // Update user status to completed
     await User.findByIdAndUpdate(req.user.id, { testStatus: 'completed' });
     
-    // Update or create test assignment
+    // Update or create test assignment with score
     if (user.assignedTest) {
       const existingAssignment = await TestAssignment.findOne({
         candidate: req.user.id,
@@ -113,6 +163,9 @@ exports.submitSolution = async (req, res) => {
         await TestAssignment.findByIdAndUpdate(existingAssignment._id, {
           status: 'completed',
           completedAt: new Date(),
+          program: programId, // Ensure program is set
+          score: score,
+          totalQuestions: program.testCases?.length || 0
         });
       } else {
         // Create TestAssignment if it doesn't exist (for legacy tests)
@@ -123,6 +176,8 @@ exports.submitSolution = async (req, res) => {
           testType: 'Coding',
           status: 'completed',
           isActive: true,
+          score: score,
+          totalQuestions: program.testCases?.length || 0,
           assignedAt: user.createdAt || new Date(),
           startedAt: user.testStartTime || new Date(),
           completedAt: new Date(),
@@ -132,7 +187,11 @@ exports.submitSolution = async (req, res) => {
       }
     }
     
-    res.json({ msg: 'Solution submitted successfully', solution });
+    res.json({ 
+      msg: 'Solution submitted successfully', 
+      solution,
+      testResults
+    });
   } catch (err) {
     console.error(err.message);
     res.status(500).send('Server Error');
@@ -184,54 +243,68 @@ exports.startTest = async (req, res) => {
 };
 
 exports.runCode = async (req, res) => {
-  const { code, language, input } = req.body;
+  const { code, language, programId } = req.body;
   
   try {
-    const axios = require('axios');
+    const User = require('../models/User');
+    const Program = require('../models/Program');
+    const judge0Service = require('../services/judge0Service');
     
-    // Language ID mapping for Judge0
-    const languageMap = {
-      'javascript': 63,  // Node.js
-      'python': 71,      // Python 3
-      'java': 62         // Java
-    };
+    const user = await User.findById(req.user.id);
     
-    const languageId = languageMap[language];
-    if (!languageId) {
-      return res.status(400).json({ msg: 'Unsupported language' });
+    // Get program ID from user's assigned test if not provided
+    const progId = programId || user.assignedProgram;
+    
+    if (!progId) {
+      return res.status(400).json({ msg: 'No program assigned' });
     }
     
-    // Submit code to Judge0
-    const submissionResponse = await axios.post(
-      `${process.env.JUDGE0_API_URL}/submissions?base64_encoded=false&wait=true`,
-      {
-        source_code: code,
-        language_id: languageId,
-        stdin: input || '',
-      },
-      {
-        headers: {
-          'Content-Type': 'application/json'
-        }
+    // Fetch program with test cases
+    const program = await Program.findById(progId);
+    if (!program) {
+      return res.status(404).json({ msg: 'Program not found' });
+    }
+    
+    // Run code against test cases
+    if (program.testCases && program.testCases.length > 0) {
+      try {
+        const testResults = await judge0Service.runTestCases(code, language, program.testCases);
+        return res.json({
+          success: true,
+          testResults
+        });
+      } catch (err) {
+        console.error('Test execution failed:', err);
+        return res.status(500).json({ 
+          success: false,
+          error: err.message 
+        });
       }
-    );
-    
-    const result = submissionResponse.data;
-    
-    res.json({
-      stdout: result.stdout || '',
-      stderr: result.stderr || '',
-      compile_output: result.compile_output || '',
-      status: result.status?.description || 'Unknown',
-      time: result.time,
-      memory: result.memory
-    });
+    } else {
+      // No test cases, just compile/run the code once
+      try {
+        const result = await judge0Service.executeCode(code, language, '');
+        return res.json({
+          success: true,
+          stdout: result.stdout,
+          stderr: result.stderr,
+          compile_output: result.compile_output,
+          status: result.status
+        });
+      } catch (err) {
+        console.error('Code execution failed:', err);
+        return res.status(500).json({ 
+          success: false,
+          error: err.message 
+        });
+      }
+    }
     
   } catch (err) {
     console.error('Code execution error:', err.message);
     res.status(500).json({ 
-      msg: 'Code execution failed',
-      error: err.response?.data || err.message 
+      success: false,
+      error: err.message 
     });
   }
 };

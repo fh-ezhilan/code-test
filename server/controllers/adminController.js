@@ -202,6 +202,17 @@ exports.createCandidate = async (req, res) => {
     const salt = await bcrypt.genSalt(10);
     user.password = await bcrypt.hash(password, salt);
     await user.save();
+    
+    // Create TestAssignment record
+    await TestAssignment.create({
+      candidate: user._id,
+      testSession: testSessionId,
+      testType: testSession.testType,
+      status: 'not-started',
+      isActive: true,
+      assignedAt: new Date()
+    });
+    
     res.status(201).json({ msg: 'Candidate created successfully' });
   } catch (err) {
     console.error(err.message);
@@ -290,8 +301,22 @@ exports.bulkCreateCandidates = async (req, res) => {
         const salt = await bcrypt.genSalt(10);
         user.password = await bcrypt.hash(password, salt);
         await user.save();
+        
+        // Get the full test session to determine type
+        const testSession = await TestSession.findById(testSessionId);
+        
+        // Create TestAssignment record
+        const newAssignment = await TestAssignment.create({
+          candidate: user._id,
+          testSession: testSessionId,
+          testType: testSession.testType,
+          status: 'not-started',
+          isActive: true,
+          assignedAt: new Date()
+        });
+        
         created++;
-        console.log('Created candidate:', username);
+        console.log('Created candidate and test assignment:', username);
       } catch (err) {
         console.error('Error creating candidate:', username, err.message);
         errors.push(`Failed to create ${username}: ${err.message}`);
@@ -330,21 +355,42 @@ exports.getCandidates = async (req, res) => {
           candidate: candidate._id,
           status: 'completed',
           score: { $exists: true }
-        });
+        }).populate('program');
         
         // Also check for legacy MCQ answers (tests completed before TestAssignment system)
         const legacyMCQAnswers = await MCQAnswer.find({
           candidate: candidate._id
         });
         
+        const Solution = require('../models/Solution');
+        
         // Collect all scores (from TestAssignments and legacy MCQ answers)
         const allScores = [];
         
         // Add scores from TestAssignments
-        completedAssignments.forEach(assignment => {
-          const percentage = (assignment.score / assignment.totalQuestions) * 100;
+        for (const assignment of completedAssignments) {
+          let percentage;
+          
+          // For Coding tests, use AI evaluation score if available
+          if (assignment.testType === 'Coding' && assignment.program) {
+            const solution = await Solution.findOne({
+              candidate: candidate._id,
+              program: assignment.program._id
+            }).sort({ submittedAt: -1 });
+            
+            if (solution && solution.aiEvaluation && solution.aiEvaluation.overallScore !== undefined) {
+              percentage = solution.aiEvaluation.overallScore;
+            } else {
+              // Fallback to test execution score
+              percentage = (assignment.score / assignment.totalQuestions) * 100;
+            }
+          } else {
+            // For MCQ tests, use regular score
+            percentage = (assignment.score / assignment.totalQuestions) * 100;
+          }
+          
           allScores.push(percentage);
-        });
+        }
         
         // Add scores from legacy MCQ answers that don't have TestAssignments
         for (const mcqAnswer of legacyMCQAnswers) {
@@ -614,12 +660,33 @@ exports.deleteAdmin = async (req, res) => {
 exports.getCandidateTestHistory = async (req, res) => {
   try {
     const { candidateId } = req.params;
+    const Solution = require('../models/Solution');
     
     // Fetch existing test assignments
     const assignments = await TestAssignment.find({ candidate: candidateId })
       .populate('testSession', 'name testType duration')
       .populate('program', 'title')
       .sort('-assignedAt');
+    
+    // For Coding tests, fetch AI evaluation scores
+    const assignmentsWithScores = await Promise.all(
+      assignments.map(async (assignment) => {
+        const assignmentObj = assignment.toObject();
+        
+        if (assignment.testType === 'Coding' && assignment.status === 'completed' && assignment.program) {
+          const solution = await Solution.findOne({
+            candidate: assignment.candidate,
+            program: assignment.program._id
+          }).sort({ submittedAt: -1 });
+          
+          if (solution && solution.aiEvaluation && solution.aiEvaluation.overallScore !== undefined) {
+            assignmentObj.aiScore = solution.aiEvaluation.overallScore;
+          }
+        }
+        
+        return assignmentObj;
+      })
+    );
     
     // Check if candidate has an assigned test without a TestAssignment record (legacy data)
     const candidate = await User.findById(candidateId)
@@ -678,7 +745,7 @@ exports.getCandidateTestHistory = async (req, res) => {
       }
     }
     
-    res.json(assignments);
+    res.json(assignmentsWithScores);
   } catch (err) {
     console.error(err.message);
     res.status(500).send('Server Error');
@@ -789,7 +856,7 @@ exports.getTestAssignmentSubmission = async (req, res) => {
     
     const assignment = await TestAssignment.findById(assignmentId)
       .populate('testSession', 'name testType')
-      .populate('program', 'title')
+      .populate('program', 'title description')
       .populate('candidate', 'username');
     
     if (!assignment) {
@@ -808,9 +875,25 @@ exports.getTestAssignmentSubmission = async (req, res) => {
     
     if (assignment.testType === 'Coding') {
       const Solution = require('../models/Solution');
+      
+      console.log('Assignment details:', {
+        assignmentId: assignment._id,
+        candidateId: assignment.candidate._id,
+        programFromAssignment: assignment.program,
+        testSessionId: assignment.testSession._id
+      });
+      
+      // Find solution by candidate and test session
       const solution = await Solution.findOne({
         candidate: assignment.candidate._id,
-        program: assignment.program
+        program: assignment.program?._id || assignment.program
+      }).sort({ submittedAt: -1 }); // Get the most recent submission
+      
+      console.log('Looking for solution:', {
+        candidate: assignment.candidate._id,
+        program: assignment.program?._id || assignment.program,
+        found: !!solution,
+        solutionData: solution ? { id: solution._id, program: solution.program, code: solution.code?.substring(0, 50) } : null
       });
       
       result.solution = solution;
@@ -830,7 +913,7 @@ exports.getTestAssignmentSubmission = async (req, res) => {
     
     res.json(result);
   } catch (err) {
-    console.error(err.message);
+    console.error('Error in getTestAssignmentSubmission:', err.message);
     res.status(500).send('Server Error');
   }
 };
