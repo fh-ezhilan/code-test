@@ -118,10 +118,41 @@ const MCQTestPage = () => {
 
   // Submit test due to tab switch violation
   const handleTabSwitchTermination = async (count) => {
-    const answersArray = Object.entries(answers).map(([questionId, selectedOption]) => ({
+    // Read answers from localStorage to ensure we get the latest saved answers
+    const userId = user?.id || user?._id;
+    let currentAnswers = answers;
+    
+    if (userId) {
+      const storageKey = `mcq_answers_${userId}`;
+      const savedAnswers = localStorage.getItem(storageKey);
+      console.log('[Tab Switch Termination] Reading from localStorage:', {
+        storageKey,
+        savedAnswers: savedAnswers ? 'exists' : 'null',
+        stateAnswers: Object.keys(answers).length
+      });
+      if (savedAnswers) {
+        try {
+          currentAnswers = JSON.parse(savedAnswers);
+          console.log('[Tab Switch Termination] Parsed answers:', {
+            count: Object.keys(currentAnswers).length,
+            answers: currentAnswers
+          });
+        } catch (err) {
+          console.error('Failed to parse saved answers during termination:', err);
+        }
+      }
+    }
+    
+    const answersArray = Object.entries(currentAnswers).map(([questionId, selectedOption]) => ({
       questionId,
       selectedOption,
     }));
+
+    console.log('[Tab Switch Termination] Submitting:', {
+      answersCount: answersArray.length,
+      answersArray,
+      tabSwitchCount: count
+    });
 
     try {
       await axios.post('/api/candidate/test/mcq/submit', {
@@ -129,7 +160,6 @@ const MCQTestPage = () => {
         tabSwitchCount: count,
       }, { withCredentials: true });
       // Clear localStorage after successful submission
-      const userId = user?.id || user?._id;
       if (userId) {
         const storageKey = `mcq_answers_${userId}`;
         localStorage.removeItem(storageKey);
@@ -143,10 +173,11 @@ const MCQTestPage = () => {
 
   // Check if user has completed the test
   useEffect(() => {
-    if (user?.testStatus === 'completed') {
+    // Don't navigate away if we're showing the logout dialog
+    if (user?.testStatus === 'completed' && !logoutDialog) {
       navigate('/test-completed');
     }
-  }, [user, navigate]);
+  }, [user, navigate, logoutDialog]);
 
   // Detect tab/window switches
   useEffect(() => {

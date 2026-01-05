@@ -383,6 +383,12 @@ exports.getMCQQuestions = async (req, res) => {
 exports.submitMCQAnswers = async (req, res) => {
   const { answers, tabSwitchCount = 0 } = req.body; // Array of { questionId, selectedOption }
   
+  console.log('[Submit MCQ Answers] Received data:', {
+    answersCount: answers?.length,
+    answers: answers,
+    tabSwitchCount
+  });
+  
   try {
     const User = require('../models/User');
     const user = await User.findById(req.user.id);
@@ -404,6 +410,19 @@ exports.submitMCQAnswers = async (req, res) => {
       }
     });
     
+    console.log('[Submit MCQ Answers] Calculated score:', {
+      score,
+      totalQuestions,
+      answersReceived: answers.length
+    });
+    
+    // Delete any existing MCQAnswer for this candidate and test session
+    // This prevents duplicate submissions
+    await MCQAnswer.deleteMany({
+      candidate: req.user.id,
+      testSession: user.assignedTest
+    });
+    
     // Save MCQ answers
     const mcqAnswer = new MCQAnswer({
       candidate: req.user.id,
@@ -414,6 +433,13 @@ exports.submitMCQAnswers = async (req, res) => {
       tabSwitchCount,
     });
     await mcqAnswer.save();
+    
+    console.log('[Submit MCQ Answers] Saved MCQAnswer:', {
+      id: mcqAnswer._id,
+      answersCount: mcqAnswer.answers?.length,
+      score: mcqAnswer.score,
+      tabSwitchCount: mcqAnswer.tabSwitchCount
+    });
     
     // Update user status to completed
     await User.findByIdAndUpdate(req.user.id, { testStatus: 'completed' });

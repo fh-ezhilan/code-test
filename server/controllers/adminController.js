@@ -910,6 +910,16 @@ exports.getTestAssignmentSubmission = async (req, res) => {
       const mcqAnswer = await MCQAnswer.findOne({
         candidate: assignment.candidate._id,
         testSession: assignment.testSession._id
+      }).sort({ submittedAt: -1 }); // Get the most recent submission
+      
+      console.log('[Get MCQ Submission] Found MCQAnswer:', {
+        found: !!mcqAnswer,
+        answersCount: mcqAnswer?.answers?.length,
+        score: mcqAnswer?.score,
+        totalQuestions: mcqAnswer?.totalQuestions,
+        tabSwitchCount: mcqAnswer?.tabSwitchCount,
+        candidateId: assignment.candidate._id,
+        testSessionId: assignment.testSession._id
       });
       
       const testSession = await TestSession.findById(assignment.testSession._id)
@@ -943,6 +953,24 @@ exports.deleteTestAssignment = async (req, res) => {
     const assignment = await TestAssignment.findById(assignmentId);
     if (!assignment) {
       return res.status(404).json({ msg: 'Test assignment not found' });
+    }
+    
+    // Delete related MCQAnswer or Solution records
+    if (assignment.testType === 'MCQ') {
+      // Delete the MCQAnswer record associated with this test assignment
+      await MCQAnswer.deleteOne({
+        candidate: assignment.candidate,
+        testSession: assignment.testSession
+      });
+      console.log('Deleted MCQAnswer for assignment:', assignmentId);
+    } else if (assignment.testType === 'Coding' && assignment.program) {
+      // Delete the Solution record associated with this test assignment
+      const Solution = require('../models/Solution');
+      await Solution.deleteOne({
+        candidate: assignment.candidate,
+        program: assignment.program
+      });
+      console.log('Deleted Solution for assignment:', assignmentId);
     }
     
     if (assignment.isActive) {

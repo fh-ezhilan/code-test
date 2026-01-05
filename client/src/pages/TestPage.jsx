@@ -133,10 +133,11 @@ const TestPage = () => {
 
   // Check if user has completed the test
   useEffect(() => {
-    if (user?.testStatus === 'completed') {
+    // Don't navigate away if we're showing the logout dialog
+    if (user?.testStatus === 'completed' && !logoutDialog) {
       navigate('/submission-success');
     }
-  }, [user, navigate]);
+  }, [user, navigate, logoutDialog]);
 
   // Detect tab/window switches
   useEffect(() => {
