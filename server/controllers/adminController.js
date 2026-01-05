@@ -961,3 +961,123 @@ exports.deleteTestAssignment = async (req, res) => {
     res.status(500).send('Server Error');
   }
 };
+
+exports.exportCandidatesData = async (req, res) => {
+  try {
+    const Solution = require('../models/Solution');
+    
+    // Get all candidates
+    const candidates = await User.find({ role: 'candidate' })
+      .select('-password')
+      .sort('username');
+    
+    // First pass: collect all unique test names that have been actually taken
+    const allTestNames = new Set();
+    const candidateData = [];
+    
+    for (const candidate of candidates) {
+      // Get all test assignments for this candidate
+      const assignments = await TestAssignment.find({ 
+        candidate: candidate._id,
+        status: 'completed'
+      }).populate('testSession');
+      
+      // Store scores for each test
+      const testScores = {};
+      const allScores = [];
+      
+      for (const assignment of assignments) {
+        let score;
+        
+        if (assignment.testType === 'Coding') {
+          // Get AI score if available
+          if (assignment.program) {
+            const solution = await Solution.findOne({
+              candidate: candidate._id,
+              program: assignment.program
+            }).sort({ submittedAt: -1 });
+            
+            if (solution && solution.aiEvaluation && solution.aiEvaluation.overallScore !== undefined) {
+              score = solution.aiEvaluation.overallScore;
+            } else {
+              score = 0; // No solution or evaluation
+            }
+          } else {
+            score = 0;
+          }
+        } else {
+          // MCQ test
+          if (assignment.score !== undefined && assignment.totalQuestions) {
+            score = Math.round((assignment.score / assignment.totalQuestions) * 100);
+          } else {
+            score = 0;
+          }
+        }
+        
+        const testName = assignment.testSession ? assignment.testSession.name : 'Unknown Test';
+        allTestNames.add(testName);
+        
+        // Store score for this test (if same test taken multiple times, keep track of all scores)
+        if (!testScores[testName]) {
+          testScores[testName] = [];
+        }
+        testScores[testName].push(score);
+        allScores.push(score);
+      }
+      
+      // Calculate cumulative score (average)
+      const cumulativeScore = allScores.length > 0
+        ? Math.round(allScores.reduce((sum, s) => sum + s, 0) / allScores.length)
+        : 0;
+      
+      candidateData.push({
+        username: candidate.username,
+        cumulativeScore,
+        testScores
+      });
+    }
+    
+    // Convert set to sorted array
+    const testNamesArray = Array.from(allTestNames).sort();
+    
+    // Second pass: build export data with only the tests that were taken
+    const exportData = candidateData.map(data => {
+      const row = {
+        Username: data.username,
+        'Cumulative Score': `${data.cumulativeScore}%`
+      };
+      
+      // Add columns for each test that was actually taken
+      testNamesArray.forEach(testName => {
+        if (data.testScores[testName] && data.testScores[testName].length > 0) {
+          // If test taken multiple times, show all scores separated by comma
+          if (data.testScores[testName].length === 1) {
+            row[testName] = `${data.testScores[testName][0]}%`;
+          } else {
+            row[testName] = data.testScores[testName].map(s => `${s}%`).join(', ');
+          }
+        } else {
+          row[testName] = '-';
+        }
+      });
+      
+      return row;
+    });
+    
+    // Create Excel file
+    const ws = xlsx.utils.json_to_sheet(exportData);
+    const wb = xlsx.utils.book_new();
+    xlsx.utils.book_append_sheet(wb, ws, 'Candidates');
+    
+    // Generate buffer
+    const buffer = xlsx.write(wb, { type: 'buffer', bookType: 'xlsx' });
+    
+    // Set headers for file download
+    res.setHeader('Content-Disposition', 'attachment; filename=candidates_data.xlsx');
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.send(buffer);
+  } catch (err) {
+    console.error('Error exporting candidates data:', err.message);
+    res.status(500).send('Server Error');
+  }
+};

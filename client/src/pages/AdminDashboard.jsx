@@ -728,6 +728,37 @@ const AdminDashboard = () => {
       addSnackbar('Failed to load test history', 'error');
     }
   };
+
+  const handleExportCandidates = async () => {
+    try {
+      const response = await axios.get('/api/admin/candidates/export', {
+        withCredentials: true,
+        responseType: 'blob', // Important for binary data
+      });
+      
+      // Create a blob from the response
+      const blob = new Blob([response.data], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      });
+      
+      // Create a temporary URL and trigger download
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `candidates_data_${new Date().toISOString().split('T')[0]}.xlsx`;
+      document.body.appendChild(link);
+      link.click();
+      
+      // Clean up
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      
+      addSnackbar('Candidates data exported successfully', 'success');
+    } catch (err) {
+      console.error('Error exporting candidates:', err);
+      addSnackbar('Failed to export candidates data', 'error');
+    }
+  };
   
   const handleSetActiveTest = async (assignmentId) => {
     try {
@@ -951,6 +982,21 @@ const AdminDashboard = () => {
                     Delete Selected ({selectedCandidates.length})
                   </Button>
                 )}
+                <Button
+                  variant="outlined"
+                  onClick={handleExportCandidates}
+                  sx={{ 
+                    textTransform: 'none',
+                    borderColor: '#00a86b',
+                    color: '#00a86b',
+                    '&:hover': { 
+                      borderColor: '#008f5a',
+                      bgcolor: 'rgba(0, 168, 107, 0.04)'
+                    }
+                  }}
+                >
+                  Export to Excel
+                </Button>
                 <Button
                   variant="contained"
                   startIcon={<AddIcon />}

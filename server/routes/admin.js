@@ -35,4 +35,7 @@ router.put('/test-assignment/:assignmentId/set-active', isAdmin, adminController
 router.get('/test-assignment/:assignmentId/submission', isAdmin, adminController.getTestAssignmentSubmission);
 router.delete('/test-assignment/:assignmentId', isAdmin, adminController.deleteTestAssignment);
 
+// Export routes
+router.get('/candidates/export', isAdmin, adminController.exportCandidatesData);
+
 module.exports = router;
