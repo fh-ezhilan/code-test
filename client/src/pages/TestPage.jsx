@@ -365,8 +365,8 @@ const TestPage = () => {
           autoSubmit();
           return 0;
         }
-        // Show warning when time drops below 60 seconds
-        if (prev === 60 && !timeWarningShown) {
+        // Show warning when time drops below 5 minutes
+        if (prev === 300 && !timeWarningShown) {
           setTimeWarningDialog(true);
           setTimeWarningShown(true);
         }
@@ -1132,7 +1132,7 @@ const TestPage = () => {
         </DialogTitle>
         <DialogContent sx={{ mt: 2 }}>
           <DialogContentText sx={{ fontSize: '1.1rem', color: 'text.primary' }}>
-            You have less than <strong>1 minute</strong> remaining to complete your test.
+            You have less than <strong>5 minutes</strong> remaining to complete your test.
             Please submit your solution soon to avoid automatic submission.
           </DialogContentText>
         </DialogContent>

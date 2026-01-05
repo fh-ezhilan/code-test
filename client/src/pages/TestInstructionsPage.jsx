@@ -106,14 +106,63 @@ const TestInstructionsPage = () => {
         <Typography variant="h4" component="h1" gutterBottom align="center">
           {instructions.name}
         </Typography>
-        <Typography variant="h6" gutterBottom>
+        
+        <Typography variant="h6" gutterBottom sx={{ mt: 3 }}>
           Instructions
         </Typography>
         <Typography paragraph>{instructions.instructions}</Typography>
-        <Typography variant="h6" gutterBottom>
+        
+        {instructions.testType === 'Coding' && (
+          <Box sx={{ mt: 2, mb: 2 }}>
+            <Typography variant="body1" paragraph>
+              <strong>Choosing Programming Language:</strong>
+              <br />
+              • You can select your preferred programming language (Java, JavaScript, or Python) from the dropdown menu in the top-right section of the code editor.
+            </Typography>
+            
+            <Typography variant="body1" paragraph>
+              <strong>Running and Testing Your Code:</strong>
+              <br />
+              • Write your solution in the code editor provided.
+              <br />
+              • Click the <strong>"Run"</strong> button at the bottom-right to execute your code against sample test cases.
+              <br />
+              • View the output in the <strong>"Test Result"</strong> tab below the editor.
+              <br />
+              • Once satisfied with your solution, click the <strong>"Submit"</strong> button to finalize your submission.
+            </Typography>
+          </Box>
+        )}
+        
+        <Typography variant="body1" paragraph sx={{ 
+          mt: 3, 
+          p: 2, 
+          bgcolor: '#fff3cd', 
+          borderLeft: '4px solid #ff9800',
+          borderRadius: 1
+        }}>
+          <strong style={{ fontSize: '1.1rem' }}>⚠️ IMPORTANT: Do NOT switch tabs or windows during the test!</strong>
+          <br />
+          Switching tabs will trigger a warning on your first attempt. If you switch tabs a second time, your test will be automatically submitted and you will be logged out.
+        </Typography>
+        
+        <Typography variant="body1" paragraph sx={{ 
+          mt: 2, 
+          p: 2, 
+          bgcolor: '#e3f2fd', 
+          borderLeft: '4px solid #2196f3',
+          borderRadius: 1
+        }}>
+          <strong>Time Management:</strong>
+          <br />
+          A popup notification will appear when you have <strong>5 minutes</strong> remaining in your test. Make sure to submit your answers before time runs out.
+        </Typography>
+        
+        <Typography variant="h6" gutterBottom sx={{ mt: 3 }}>
           Test Duration
         </Typography>
         <Typography paragraph>{instructions.duration} minutes</Typography>
+        
         <Box mt={4} display="flex" justifyContent="center">
           <Button
             variant="contained"

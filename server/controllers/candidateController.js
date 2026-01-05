@@ -11,7 +11,7 @@ exports.getTestInstructions = async (req, res) => {
     const user = await User.findById(req.user.id);
     
     if (!user || !user.assignedTest) {
-      return res.status(404).json({ msg: 'No test assigned to this candidate' });
+      return res.status(404).json({ msg: 'No test is assigned to you' });
     }
     
     const testSession = await TestSession.findById(user.assignedTest);
@@ -50,7 +50,7 @@ exports.getTestProgram = async (req, res) => {
     
     // Check if user has an assigned test
     if (!user.assignedTest) {
-      return res.status(400).json({ msg: 'No test assigned to this candidate' });
+      return res.status(400).json({ msg: 'No test is assigned to you' });
     }
     
     // Get the test session assigned to this candidate
@@ -352,7 +352,7 @@ exports.getMCQQuestions = async (req, res) => {
     const user = await User.findById(req.user.id);
     
     if (!user || !user.assignedTest) {
-      return res.status(400).json({ msg: 'No test assigned to this candidate' });
+      return res.status(400).json({ msg: 'No test is assigned to you' });
     }
     
     const testSession = await TestSession.findById(user.assignedTest).populate('mcqQuestions');
