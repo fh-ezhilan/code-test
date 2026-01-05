@@ -1873,9 +1873,9 @@ const AdminDashboard = () => {
                           <Typography variant="body2" fontWeight={600}>
                             {assignment.score}/{assignment.totalQuestions} ({Math.round((assignment.score / assignment.totalQuestions) * 100)}%)
                           </Typography>
-                        ) : assignment.testType === 'Coding' && assignment.aiScore !== undefined ? (
+                        ) : assignment.testType === 'Coding' && assignment.status === 'completed' ? (
                           <Typography variant="body2" fontWeight={600}>
-                            {assignment.aiScore}/100
+                            {assignment.aiScore !== undefined ? assignment.aiScore : 0}/100
                           </Typography>
                         ) : (
                           <Typography variant="body2" color="text.secondary">-</Typography>
@@ -1888,11 +1888,11 @@ const AdminDashboard = () => {
                             size="small"
                             color={Math.round((assignment.score / assignment.totalQuestions) * 100) >= 75 ? 'success' : 'error'}
                           />
-                        ) : assignment.testType === 'Coding' && assignment.aiScore !== undefined ? (
+                        ) : assignment.testType === 'Coding' && assignment.status === 'completed' ? (
                           <Chip 
-                            label={assignment.aiScore >= 75 ? 'Pass' : 'Fail'}
+                            label={(assignment.aiScore !== undefined ? assignment.aiScore : 0) >= 75 ? 'Pass' : 'Fail'}
                             size="small"
-                            color={assignment.aiScore >= 75 ? 'success' : 'error'}
+                            color={(assignment.aiScore !== undefined ? assignment.aiScore : 0) >= 75 ? 'success' : 'error'}
                           />
                         ) : (
                           <Typography variant="body2" color="text.secondary">-</Typography>

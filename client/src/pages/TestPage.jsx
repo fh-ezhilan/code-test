@@ -36,7 +36,7 @@ import {
 
 const TestPage = () => {
   const [program, setProgram] = useState(null);
-  const [language, setLanguage] = useState('javascript');
+  const [language, setLanguage] = useState('java');
   const [code, setCode] = useState('');
   const [bottomTab, setBottomTab] = useState(0);
   const [isFullscreen, setIsFullscreen] = useState(false);
