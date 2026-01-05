@@ -32,6 +32,9 @@ const MCQTestPage = () => {
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [loading, setLoading] = useState(true);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'info' });
+  const [tabSwitchCount, setTabSwitchCount] = useState(0);
+  const [tabSwitchDialog, setTabSwitchDialog] = useState(false);
+  const [logoutDialog, setLogoutDialog] = useState(false);
   const navigate = useNavigate();
   const { logout, user, loading: authLoading } = useAuth();
   
@@ -98,6 +101,7 @@ const MCQTestPage = () => {
     try {
       await axios.post('/api/candidate/test/mcq/submit', {
         answers: answersArray,
+        tabSwitchCount,
       }, { withCredentials: true });
       // Clear localStorage after successful submission
       const userId = user?.id || user?._id;
@@ -112,12 +116,85 @@ const MCQTestPage = () => {
     }
   };
 
+  // Submit test due to tab switch violation
+  const handleTabSwitchTermination = async (count) => {
+    const answersArray = Object.entries(answers).map(([questionId, selectedOption]) => ({
+      questionId,
+      selectedOption,
+    }));
+
+    try {
+      await axios.post('/api/candidate/test/mcq/submit', {
+        answers: answersArray,
+        tabSwitchCount: count,
+      }, { withCredentials: true });
+      // Clear localStorage after successful submission
+      const userId = user?.id || user?._id;
+      if (userId) {
+        const storageKey = `mcq_answers_${userId}`;
+        localStorage.removeItem(storageKey);
+      }
+    } catch (err) {
+      console.error('Tab switch termination error:', err);
+    }
+    // Show logout dialog instead of immediately navigating
+    setLogoutDialog(true);
+  };
+
   // Check if user has completed the test
   useEffect(() => {
     if (user?.testStatus === 'completed') {
       navigate('/test-completed');
     }
   }, [user, navigate]);
+
+  // Detect tab/window switches
+  useEffect(() => {
+    let lastSwitchTime = 0;
+    const DEBOUNCE_TIME = 1000; // Prevent double counting within 1 second
+
+    const recordSwitch = () => {
+      const now = Date.now();
+      if (now - lastSwitchTime > DEBOUNCE_TIME) {
+        lastSwitchTime = now;
+        setTabSwitchCount(prev => {
+          const newCount = prev + 1;
+          
+          // If this is the second switch, terminate test
+          if (newCount >= 2) {
+            handleTabSwitchTermination(newCount);
+          } else {
+            // First switch, show warning
+            setTabSwitchDialog(true);
+          }
+          
+          return newCount;
+        });
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.hidden && questions.length > 0) {
+        // Tab was switched
+        recordSwitch();
+      }
+    };
+
+    const handleBlur = () => {
+      if (questions.length > 0) {
+        // Window lost focus (switched to another application)
+        recordSwitch();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('blur', handleBlur);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('blur', handleBlur);
+    };
+  }, [questions]);
 
   // Fetch MCQ questions
   useEffect(() => {
@@ -198,6 +275,7 @@ const MCQTestPage = () => {
     try {
       await axios.post('/api/candidate/test/mcq/submit', {
         answers: answersArray,
+        tabSwitchCount,
       }, { withCredentials: true });
       // Clear localStorage after successful submission
       const userId = user?.id || user?._id;
@@ -319,6 +397,78 @@ const MCQTestPage = () => {
           </Button>
         </Box>
       </Container>
+
+      {/* Logout Notification Dialog */}
+      <Dialog
+        open={logoutDialog}
+        aria-labelledby="logout-dialog"
+        maxWidth="sm"
+        fullWidth
+        disableEscapeKeyDown
+      >
+        <DialogTitle id="logout-dialog" sx={{ bgcolor: '#d32f2f', color: 'white' }}>
+          Test Terminated
+        </DialogTitle>
+        <DialogContent sx={{ mt: 2 }}>
+          <Typography sx={{ fontSize: '1.1rem', color: 'text.primary', mb: 2 }}>
+            Your test has been automatically submitted and you have been logged out due to multiple tab switches.
+          </Typography>
+          <Typography sx={{ fontSize: '0.95rem', color: 'text.secondary' }}>
+            Switching tabs or windows during the test is not allowed. Your submission has been recorded.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button 
+            onClick={async () => {
+              try {
+                await logout();
+              } catch (err) {
+                console.error('Logout error:', err);
+              }
+              navigate('/login');
+            }} 
+            variant="contained" 
+            color="error"
+            autoFocus
+          >
+            Okay
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Tab Switch Warning Dialog */}
+      <Dialog
+        open={tabSwitchDialog}
+        onClose={() => setTabSwitchDialog(false)}
+        aria-labelledby="tab-switch-dialog"
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle id="tab-switch-dialog" sx={{ bgcolor: '#d32f2f', color: 'white' }}>
+          ⚠️ Tab Switch Detected!
+        </DialogTitle>
+        <DialogContent sx={{ mt: 2 }}>
+          <Typography sx={{ fontSize: '1.1rem', color: 'text.primary', mb: 2 }}>
+            You have switched away from the test window. This activity has been recorded.
+          </Typography>
+          <Typography sx={{ fontSize: '1rem', color: 'error.main', fontWeight: 700, mt: 2, p: 2, bgcolor: '#ffebee', borderRadius: 1 }}>
+            ⚠️ CRITICAL WARNING: If you switch tabs or windows one more time, your test will be automatically submitted and you will be logged out.
+          </Typography>
+          <Typography sx={{ fontSize: '0.9rem', color: 'text.secondary', mt: 1 }}>
+            Please remain on this page until you complete the test.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button 
+            onClick={() => setTabSwitchDialog(false)} 
+            variant="contained" 
+            color="error"
+            autoFocus
+          >
+            I Understand
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Confirmation Dialog */}
       <Dialog open={showConfirmDialog} onClose={() => setShowConfirmDialog(false)}>

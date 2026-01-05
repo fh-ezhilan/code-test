@@ -49,6 +49,11 @@ const TestPage = () => {
   const [isRunning, setIsRunning] = useState(false);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'info' });
   const [confirmDialog, setConfirmDialog] = useState(false);
+  const [timeWarningShown, setTimeWarningShown] = useState(false);
+  const [timeWarningDialog, setTimeWarningDialog] = useState(false);
+  const [tabSwitchCount, setTabSwitchCount] = useState(0);
+  const [tabSwitchDialog, setTabSwitchDialog] = useState(false);
+  const [logoutDialog, setLogoutDialog] = useState(false);
   const editorRef = useRef(null);
   const navigate = useNavigate();
   const { logout, user } = useAuth();
@@ -89,23 +94,97 @@ const TestPage = () => {
       try {
         await axios.post('/api/candidate/test/submit', {
           programId: program._id,
-          code: currentCode,
+          code: currentCode || '',
           language,
+          tabSwitchCount,
         }, { withCredentials: true });
-        navigate('/test-completed');
       } catch (err) {
         console.error('Auto-submit error:', err);
-        navigate('/test-completed');
       }
     }
+    // Log out the user after submission
+    try {
+      await logout();
+      navigate('/login');
+    } catch (err) {
+      console.error('Logout error:', err);
+      navigate('/login');
+    }
+  };
+
+  // Submit test due to tab switch violation
+  const handleTabSwitchTermination = async (count) => {
+    if (editorRef.current && program) {
+      const currentCode = editorRef.current.getValue();
+      try {
+        await axios.post('/api/candidate/test/submit', {
+          programId: program._id,
+          code: currentCode || '',
+          language,
+          tabSwitchCount: count,
+        }, { withCredentials: true });
+      } catch (err) {
+        console.error('Tab switch termination error:', err);
+      }
+    }
+    // Show logout dialog instead of immediately logging out
+    setLogoutDialog(true);
   };
 
   // Check if user has completed the test
   useEffect(() => {
     if (user?.testStatus === 'completed') {
-      navigate('/test-completed');
+      navigate('/submission-success');
     }
   }, [user, navigate]);
+
+  // Detect tab/window switches
+  useEffect(() => {
+    let lastSwitchTime = 0;
+    const DEBOUNCE_TIME = 1000; // Prevent double counting within 1 second
+
+    const recordSwitch = () => {
+      const now = Date.now();
+      if (now - lastSwitchTime > DEBOUNCE_TIME) {
+        lastSwitchTime = now;
+        setTabSwitchCount(prev => {
+          const newCount = prev + 1;
+          
+          // If this is the second switch, terminate test
+          if (newCount >= 2) {
+            handleTabSwitchTermination(newCount);
+          } else {
+            // First switch, show warning
+            setTabSwitchDialog(true);
+          }
+          
+          return newCount;
+        });
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.hidden && program) {
+        // Tab was switched
+        recordSwitch();
+      }
+    };
+
+    const handleBlur = () => {
+      if (program) {
+        // Window lost focus (switched to another application)
+        recordSwitch();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('blur', handleBlur);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('blur', handleBlur);
+    };
+  }, [program]);
 
   const toggleFullscreen = () => {
     setIsFullscreen(!isFullscreen);
@@ -286,6 +365,11 @@ const TestPage = () => {
           autoSubmit();
           return 0;
         }
+        // Show warning when time drops below 60 seconds
+        if (prev === 60 && !timeWarningShown) {
+          setTimeWarningDialog(true);
+          setTimeWarningShown(true);
+        }
         return prev - 1;
       });
     }, 1000);
@@ -340,6 +424,7 @@ const TestPage = () => {
           programId: program._id,
           code: currentCode,
           language,
+          tabSwitchCount,
         }, { withCredentials: true });
         setSnackbar({ open: true, message: 'Test submitted successfully!', severity: 'success' });
         setTimeout(() => navigate('/submission-success'), 1500);
@@ -961,6 +1046,108 @@ const TestPage = () => {
           {snackbar.message}
         </Alert>
       </Snackbar>
+
+      {/* Logout Notification Dialog */}
+      <Dialog
+        open={logoutDialog}
+        aria-labelledby="logout-dialog"
+        maxWidth="sm"
+        fullWidth
+        disableEscapeKeyDown
+      >
+        <DialogTitle id="logout-dialog" sx={{ bgcolor: '#d32f2f', color: 'white' }}>
+          Test Terminated
+        </DialogTitle>
+        <DialogContent sx={{ mt: 2 }}>
+          <DialogContentText sx={{ fontSize: '1.1rem', color: 'text.primary', mb: 2 }}>
+            Your test has been automatically submitted and you have been logged out due to multiple tab switches.
+          </DialogContentText>
+          <DialogContentText sx={{ fontSize: '0.95rem', color: 'text.secondary' }}>
+            Switching tabs or windows during the test is not allowed. Your submission has been recorded.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button 
+            onClick={async () => {
+              try {
+                await logout();
+              } catch (err) {
+                console.error('Logout error:', err);
+              }
+              navigate('/login');
+            }} 
+            variant="contained" 
+            color="error"
+            autoFocus
+          >
+            Okay
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Tab Switch Warning Dialog */}
+      <Dialog
+        open={tabSwitchDialog}
+        onClose={() => setTabSwitchDialog(false)}
+        aria-labelledby="tab-switch-dialog"
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle id="tab-switch-dialog" sx={{ bgcolor: '#d32f2f', color: 'white' }}>
+          ⚠️ Tab Switch Detected!
+        </DialogTitle>
+        <DialogContent sx={{ mt: 2 }}>
+          <DialogContentText sx={{ fontSize: '1.1rem', color: 'text.primary', mb: 2 }}>
+            You have switched away from the test window. This activity has been recorded.
+          </DialogContentText>
+          <DialogContentText sx={{ fontSize: '1rem', color: 'error.main', fontWeight: 700, mt: 2, p: 2, bgcolor: '#ffebee', borderRadius: 1 }}>
+            ⚠️ CRITICAL WARNING: If you switch tabs or windows one more time, your test will be automatically submitted and you will be logged out.
+          </DialogContentText>
+          <DialogContentText sx={{ fontSize: '0.9rem', color: 'text.secondary', mt: 1 }}>
+            Please remain on this page until you complete the test.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button 
+            onClick={() => setTabSwitchDialog(false)} 
+            variant="contained" 
+            color="error"
+            autoFocus
+          >
+            I Understand
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Timer Warning Dialog */}
+      <Dialog
+        open={timeWarningDialog}
+        onClose={() => setTimeWarningDialog(false)}
+        aria-labelledby="timer-warning-dialog"
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle id="timer-warning-dialog" sx={{ bgcolor: '#ff9800', color: 'white' }}>
+          ⚠️ Time Running Out!
+        </DialogTitle>
+        <DialogContent sx={{ mt: 2 }}>
+          <DialogContentText sx={{ fontSize: '1.1rem', color: 'text.primary' }}>
+            You have less than <strong>1 minute</strong> remaining to complete your test.
+            Please submit your solution soon to avoid automatic submission.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button 
+            onClick={() => setTimeWarningDialog(false)} 
+            variant="contained" 
+            sx={{ bgcolor: '#ff9800', '&:hover': { bgcolor: '#f57c00' } }}
+            autoFocus
+          >
+            I Understand
+          </Button>
+        </DialogActions>
+      </Dialog>
+
       {/* Confirmation Dialog */}
       <Dialog
         open={confirmDialog}

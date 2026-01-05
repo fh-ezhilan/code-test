@@ -2125,6 +2125,35 @@ const AdminDashboard = () => {
                 </Box>
               )}
               
+              {viewingSubmission?.solution?.tabSwitchCount !== undefined && viewingSubmission?.solution?.tabSwitchCount >= 1 && (
+                <Paper 
+                  elevation={2} 
+                  sx={{ 
+                    p: 2, 
+                    mt: 2, 
+                    bgcolor: viewingSubmission.solution.tabSwitchCount >= 2 ? '#ffebee' : '#fff3e0', 
+                    borderLeft: viewingSubmission.solution.tabSwitchCount >= 2 ? '4px solid #d32f2f' : '4px solid #ff9800' 
+                  }}
+                >
+                  <Typography 
+                    variant="body2" 
+                    fontWeight={600} 
+                    color={viewingSubmission.solution.tabSwitchCount >= 2 ? 'error.main' : 'warning.main'} 
+                    gutterBottom
+                  >
+                    {viewingSubmission.solution.tabSwitchCount >= 2 ? '🚫 Test Terminated Due to Tab Switching' : '⚠️ Tab Switch Detected'}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    The candidate switched tabs or windows <strong>{viewingSubmission.solution.tabSwitchCount} time(s)</strong> during this test.
+                    {viewingSubmission.solution.tabSwitchCount >= 2 && (
+                      <span style={{ display: 'block', marginTop: '8px', fontWeight: 600, color: '#d32f2f' }}>
+                        The test was automatically submitted and the candidate was logged out due to excessive tab switching.
+                      </span>
+                    )}
+                  </Typography>
+                </Paper>
+              )}
+              
               <Typography variant="h6" gutterBottom sx={{ mt: 2 }}>
                 Submitted Code
               </Typography>
@@ -2149,6 +2178,35 @@ const AdminDashboard = () => {
                 Score: {viewingSubmission?.mcqAnswer?.score}/{viewingSubmission?.mcqAnswer?.totalQuestions} 
                 ({Math.round((viewingSubmission?.mcqAnswer?.score / viewingSubmission?.mcqAnswer?.totalQuestions) * 100)}%)
               </Typography>
+              
+              {viewingSubmission?.mcqAnswer?.tabSwitchCount !== undefined && viewingSubmission?.mcqAnswer?.tabSwitchCount >= 1 && (
+                <Paper 
+                  elevation={2} 
+                  sx={{ 
+                    p: 2, 
+                    mt: 2, 
+                    bgcolor: viewingSubmission.mcqAnswer.tabSwitchCount >= 2 ? '#ffebee' : '#fff3e0', 
+                    borderLeft: viewingSubmission.mcqAnswer.tabSwitchCount >= 2 ? '4px solid #d32f2f' : '4px solid #ff9800' 
+                  }}
+                >
+                  <Typography 
+                    variant="body2" 
+                    fontWeight={600} 
+                    color={viewingSubmission.mcqAnswer.tabSwitchCount >= 2 ? 'error.main' : 'warning.main'} 
+                    gutterBottom
+                  >
+                    {viewingSubmission.mcqAnswer.tabSwitchCount >= 2 ? '🚫 Test Terminated Due to Tab Switching' : '⚠️ Tab Switch Detected'}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    The candidate switched tabs or windows <strong>{viewingSubmission.mcqAnswer.tabSwitchCount} time(s)</strong> during this test.
+                    {viewingSubmission.mcqAnswer.tabSwitchCount >= 2 && (
+                      <span style={{ display: 'block', marginTop: '8px', fontWeight: 600, color: '#d32f2f' }}>
+                        The test was automatically submitted and the candidate was logged out due to excessive tab switching.
+                      </span>
+                    )}
+                  </Typography>
+                </Paper>
+              )}
               
               {viewingSubmission?.questions?.map((question, index) => {
                 const userAnswer = viewingSubmission?.mcqAnswer?.answers?.find(

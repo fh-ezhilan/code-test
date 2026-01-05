@@ -85,7 +85,8 @@ exports.getTestProgram = async (req, res) => {
 };
 
 exports.submitSolution = async (req, res) => {
-  const { programId, code, language } = req.body;
+  const { programId, code, language, tabSwitchCount = 0 } = req.body;
+  console.log('[Submit Solution] Received tabSwitchCount:', tabSwitchCount);
   try {
     const User = require('../models/User');
     const Program = require('../models/Program');
@@ -100,58 +101,23 @@ exports.submitSolution = async (req, res) => {
       return res.status(404).json({ msg: 'Program not found' });
     }
     
-    // Run code against test cases
-    let testResults = null;
-    let score = 0;
-    
-    if (program.testCases && program.testCases.length > 0) {
-      try {
-        testResults = await judge0Service.runTestCases(code, language, program.testCases);
-        score = testResults.score;
-      } catch (err) {
-        console.error('Test execution failed:', err);
-        return res.status(500).json({ 
-          msg: 'Failed to execute code',
-          error: err.message 
-        });
-      }
-    }
-
-    // Get AI evaluation from Gemini
-    let aiEvaluation = null;
-    if (testResults) {
-      try {
-        console.log('Starting Gemini AI evaluation...');
-        const geminiResult = await geminiService.evaluateCode(code, language, program, testResults);
-        aiEvaluation = {
-          ...geminiResult.evaluation,
-          aiModel: geminiResult.aiModel,
-          evaluatedAt: geminiResult.evaluatedAt,
-          rawResponse: geminiResult.rawResponse
-        };
-        // Use Gemini's overall score if available, otherwise use test score
-        score = aiEvaluation.overallScore || score;
-        console.log('Gemini evaluation completed. Overall score:', score);
-      } catch (err) {
-        console.error('Gemini evaluation failed:', err);
-        // Continue without AI evaluation
-      }
-    }
-    
+    // Create initial solution record without evaluation
     const newSolution = new Solution({
       program: programId,
       candidate: req.user.id,
       code,
       language,
-      testResults,
-      aiEvaluation
+      testResults: null,
+      aiEvaluation: null,
+      tabSwitchCount,
     });
     const solution = await newSolution.save();
+    console.log('[Submit Solution] Saved solution with tabSwitchCount:', solution.tabSwitchCount);
     
-    // Update user status to completed
+    // Update user status to completed immediately
     await User.findByIdAndUpdate(req.user.id, { testStatus: 'completed' });
     
-    // Update or create test assignment with score
+    // Update or create test assignment
     if (user.assignedTest) {
       const existingAssignment = await TestAssignment.findOne({
         candidate: req.user.id,
@@ -163,12 +129,11 @@ exports.submitSolution = async (req, res) => {
         await TestAssignment.findByIdAndUpdate(existingAssignment._id, {
           status: 'completed',
           completedAt: new Date(),
-          program: programId, // Ensure program is set
-          score: score,
+          program: programId,
+          score: 0, // Will be updated after evaluation
           totalQuestions: program.testCases?.length || 0
-        });
+        }, { new: true });
       } else {
-        // Create TestAssignment if it doesn't exist (for legacy tests)
         await TestAssignment.create({
           candidate: req.user.id,
           testSession: user.assignedTest,
@@ -176,9 +141,9 @@ exports.submitSolution = async (req, res) => {
           testType: 'Coding',
           status: 'completed',
           isActive: true,
-          score: score,
+          score: 0,
           totalQuestions: program.testCases?.length || 0,
-          assignedAt: user.createdAt || new Date(),
+          assignedAt: new Date(),
           startedAt: user.testStartTime || new Date(),
           completedAt: new Date(),
           testStartTime: user.testStartTime,
@@ -187,11 +152,82 @@ exports.submitSolution = async (req, res) => {
       }
     }
     
+    // Send immediate response
     res.json({ 
-      msg: 'Solution submitted successfully', 
+      msg: 'Solution submitted successfully. Evaluation in progress.', 
       solution,
-      testResults
+      testResults: null
     });
+    
+    // Process test execution and AI evaluation in background
+    (async () => {
+      let testResults = null;
+      let score = 0;
+      let executionFailed = false;
+      
+      // Run code against test cases
+      if (program.testCases && program.testCases.length > 0) {
+        try {
+          console.log(`[Background] Running tests for solution ${solution._id}...`);
+          testResults = await judge0Service.runTestCases(code, language, program.testCases);
+          score = testResults.score;
+          console.log(`[Background] Test execution completed. Score: ${score}`);
+        } catch (err) {
+          console.error('[Background] Test execution failed:', err);
+          executionFailed = true;
+          testResults = {
+            score: 0,
+            passed: 0,
+            failed: program.testCases.length,
+            error: err.message
+          };
+        }
+      }
+
+      // Get AI evaluation from Gemini
+      let aiEvaluation = null;
+      if (testResults && !executionFailed) {
+        try {
+          console.log(`[Background] Starting Gemini AI evaluation for solution ${solution._id}...`);
+          const geminiResult = await geminiService.evaluateCode(code, language, program, testResults);
+          aiEvaluation = {
+            ...geminiResult.evaluation,
+            aiModel: geminiResult.aiModel,
+            evaluatedAt: geminiResult.evaluatedAt,
+            rawResponse: geminiResult.rawResponse
+          };
+          score = aiEvaluation.overallScore || score;
+          console.log(`[Background] Gemini evaluation completed. Overall score: ${score}`);
+        } catch (err) {
+          console.error('[Background] Gemini evaluation failed:', err);
+        }
+      }
+      
+      // Update solution with results
+      await Solution.findByIdAndUpdate(solution._id, {
+        testResults,
+        aiEvaluation
+      });
+      
+      // Update test assignment with final score
+      if (user.assignedTest) {
+        const assignment = await TestAssignment.findOne({
+          candidate: user._id,
+          testSession: user.assignedTest,
+          isActive: true
+        });
+        
+        if (assignment) {
+          await TestAssignment.findByIdAndUpdate(assignment._id, { score });
+          console.log(`[Background] Updated assignment ${assignment._id} with score: ${score}`);
+        }
+      }
+      
+      console.log(`[Background] Solution ${solution._id} fully processed.`);
+    })().catch(err => {
+      console.error('[Background] Error processing solution:', err);
+    });
+    
   } catch (err) {
     console.error(err.message);
     res.status(500).send('Server Error');
@@ -345,7 +381,7 @@ exports.getMCQQuestions = async (req, res) => {
 };
 
 exports.submitMCQAnswers = async (req, res) => {
-  const { answers } = req.body; // Array of { questionId, selectedOption }
+  const { answers, tabSwitchCount = 0 } = req.body; // Array of { questionId, selectedOption }
   
   try {
     const User = require('../models/User');
@@ -375,6 +411,7 @@ exports.submitMCQAnswers = async (req, res) => {
       answers,
       score,
       totalQuestions,
+      tabSwitchCount,
     });
     await mcqAnswer.save();
     

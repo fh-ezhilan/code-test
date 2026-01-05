@@ -34,7 +34,7 @@ const LoginPage = () => {
       } else {
         // Check if candidate has completed the test
         if (user.testStatus === 'completed') {
-          navigate('/test-completed');
+          navigate('/submission-success');
         } else if (user.testStatus === 'in-progress') {
           // If test is already in progress, route to the appropriate test page
           // Fetch test instructions to determine test type

@@ -788,6 +788,9 @@ exports.assignTestToCandidate = async (req, res) => {
     if (makeActive) {
       candidate.assignedTest = testSessionId;
       candidate.testStatus = 'not-started';
+      candidate.testStartTime = null;
+      candidate.testDuration = null;
+      candidate.assignedProgram = null;
       await candidate.save();
     }
     
@@ -825,17 +828,17 @@ exports.setActiveTest = async (req, res) => {
       return res.status(400).json({ msg: 'Cannot activate a completed test' });
     }
     
-    // Reset status to not-started if making active
-    if (assignment.status === 'not-started') {
-      assignment.status = 'not-started';
-    }
+    // Reset status to not-started when making active
+    assignment.status = 'not-started';
     
     await assignment.save();
     
-    // Update candidate's assignedTest
+    // Update candidate's assignedTest and reset test state
     const candidate = await User.findById(assignment.candidate);
     candidate.assignedTest = assignment.testSession;
-    candidate.testStatus = assignment.status;
+    candidate.testStatus = 'not-started';
+    candidate.testStartTime = null;
+    candidate.testDuration = null;
     candidate.assignedProgram = assignment.program || null;
     await candidate.save();
     
@@ -893,7 +896,12 @@ exports.getTestAssignmentSubmission = async (req, res) => {
         candidate: assignment.candidate._id,
         program: assignment.program?._id || assignment.program,
         found: !!solution,
-        solutionData: solution ? { id: solution._id, program: solution.program, code: solution.code?.substring(0, 50) } : null
+        solutionData: solution ? { 
+          id: solution._id, 
+          program: solution.program, 
+          code: solution.code?.substring(0, 50),
+          tabSwitchCount: solution.tabSwitchCount 
+        } : null
       });
       
       result.solution = solution;
@@ -910,6 +918,16 @@ exports.getTestAssignmentSubmission = async (req, res) => {
       result.mcqAnswer = mcqAnswer;
       result.questions = testSession.mcqQuestions;
     }
+    
+    console.log('Returning submission result:', {
+      testType: result.testType,
+      hasTabSwitchCount: result.testType === 'Coding' ? 
+        (result.solution?.tabSwitchCount !== undefined) : 
+        (result.mcqAnswer?.tabSwitchCount !== undefined),
+      tabSwitchCount: result.testType === 'Coding' ? 
+        result.solution?.tabSwitchCount : 
+        result.mcqAnswer?.tabSwitchCount
+    });
     
     res.json(result);
   } catch (err) {

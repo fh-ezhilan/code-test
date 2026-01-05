@@ -34,6 +34,20 @@ exports.login = (req, res, next) => {
       console.log('Login failed:', info);
       return res.status(400).json({ msg: info?.message || 'Invalid credentials' });
     }
+    
+    // Check if test timer has expired
+    if (user.role === 'candidate' && user.testStartTime && user.testDuration) {
+      const testStartTime = new Date(user.testStartTime);
+      const currentTime = new Date();
+      const elapsedMinutes = (currentTime - testStartTime) / (1000 * 60);
+      
+      if (elapsedMinutes >= user.testDuration) {
+        // Timer has expired, mark as completed
+        user.testStatus = 'completed';
+        user.save().catch(err => console.error('Error updating test status:', err));
+      }
+    }
+    
     req.logIn(user, err => {
       if (err) {
         console.error('Session error:', err);

@@ -36,6 +36,10 @@ const MCQAnswerSchema = new mongoose.Schema({
     type: Number,
     default: 0,
   },
+  tabSwitchCount: {
+    type: Number,
+    default: 0,
+  },
 });
 
 module.exports = mongoose.model('MCQAnswer', MCQAnswerSchema);
