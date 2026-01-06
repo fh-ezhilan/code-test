@@ -101,6 +101,13 @@ exports.submitSolution = async (req, res) => {
       return res.status(404).json({ msg: 'Program not found' });
     }
     
+    // Delete any existing Solution for this candidate and program
+    // This prevents duplicate submissions
+    await Solution.deleteMany({
+      candidate: req.user.id,
+      program: programId
+    });
+    
     // Create initial solution record without evaluation
     const newSolution = new Solution({
       program: programId,

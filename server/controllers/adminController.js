@@ -957,20 +957,20 @@ exports.deleteTestAssignment = async (req, res) => {
     
     // Delete related MCQAnswer or Solution records
     if (assignment.testType === 'MCQ') {
-      // Delete the MCQAnswer record associated with this test assignment
-      await MCQAnswer.deleteOne({
+      // Delete all MCQAnswer records associated with this test assignment
+      const deleteResult = await MCQAnswer.deleteMany({
         candidate: assignment.candidate,
         testSession: assignment.testSession
       });
-      console.log('Deleted MCQAnswer for assignment:', assignmentId);
+      console.log('Deleted MCQAnswer records for assignment:', assignmentId, 'Count:', deleteResult.deletedCount);
     } else if (assignment.testType === 'Coding' && assignment.program) {
-      // Delete the Solution record associated with this test assignment
+      // Delete all Solution records associated with this test assignment
       const Solution = require('../models/Solution');
-      await Solution.deleteOne({
+      const deleteResult = await Solution.deleteMany({
         candidate: assignment.candidate,
         program: assignment.program
       });
-      console.log('Deleted Solution for assignment:', assignmentId);
+      console.log('Deleted Solution records for assignment:', assignmentId, 'Count:', deleteResult.deletedCount);
     }
     
     if (assignment.isActive) {
