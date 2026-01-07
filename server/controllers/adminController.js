@@ -34,7 +34,7 @@ exports.getPrograms = async (req, res) => {
 };
 
 exports.updateProgram = async (req, res) => {
-  const { title, description } = req.body;
+  const { title, description, testCases } = req.body;
   try {
     let program = await Program.findById(req.params.id);
     if (!program) {
@@ -42,6 +42,7 @@ exports.updateProgram = async (req, res) => {
     }
     if (title !== undefined) program.title = title;
     if (description !== undefined) program.description = description;
+    if (testCases !== undefined) program.testCases = testCases;
     await program.save();
     res.json(program);
   } catch (err) {
@@ -88,8 +89,33 @@ exports.createTestSession = async (req, res) => {
                 // Try to parse as JSON first
                 testCases = JSON.parse(row.TestCases);
               } catch (e) {
-                // If not valid JSON, store as plain text in description
-                console.log('TestCases is plain text, skipping:', row.TestCases);
+                // If not valid JSON, try to parse as plain text format (Input: X\nOutput: Y)
+                try {
+                  const testCaseString = row.TestCases.toString();
+                  const lines = testCaseString.split('\n').map(line => line.trim()).filter(line => line);
+                  
+                  let currentInput = '';
+                  let currentOutput = '';
+                  
+                  for (const line of lines) {
+                    if (line.toLowerCase().startsWith('input:')) {
+                      currentInput = line.substring(line.indexOf(':') + 1).trim();
+                    } else if (line.toLowerCase().startsWith('output:')) {
+                      currentOutput = line.substring(line.indexOf(':') + 1).trim();
+                      
+                      // When we have both input and output, add to test cases
+                      if (currentInput && currentOutput) {
+                        testCases.push({ input: currentInput, output: currentOutput });
+                        currentInput = '';
+                        currentOutput = '';
+                      }
+                    }
+                  }
+                  
+                  console.log('Converted plain text TestCases to JSON:', testCases);
+                } catch (parseError) {
+                  console.log('Could not parse TestCases, skipping:', row.TestCases);
+                }
               }
             }
 

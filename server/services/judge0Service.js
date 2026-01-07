@@ -29,7 +29,6 @@ async function executeCode(code, language, stdin = '') {
     }
 
     const url = `${PISTON_URL}/execute`;
-    console.log('Making request to:', url);
 
     const response = await axios.post(url, {
       language: langConfig.language,
@@ -47,8 +46,6 @@ async function executeCode(code, language, stdin = '') {
         'Content-Type': 'application/json'
       }
     });
-
-    console.log('Execution response:', response.data);
 
     return {
       stdout: response.data.run?.stdout || '',

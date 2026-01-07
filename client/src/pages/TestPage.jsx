@@ -98,17 +98,11 @@ const TestPage = () => {
           language,
           tabSwitchCount,
         }, { withCredentials: true });
+        navigate('/submission-success');
       } catch (err) {
         console.error('Auto-submit error:', err);
+        navigate('/submission-success');
       }
-    }
-    // Log out the user after submission
-    try {
-      await logout();
-      navigate('/login');
-    } catch (err) {
-      console.error('Logout error:', err);
-      navigate('/login');
     }
   };
 

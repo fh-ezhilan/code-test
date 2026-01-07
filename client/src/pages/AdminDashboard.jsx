@@ -38,7 +38,7 @@ import {
   InputLabel,
 } from '@mui/material';
 import { ExpandLess, ExpandMore } from '@mui/icons-material';
-import { Add as AddIcon, Delete as DeleteIcon, Edit as EditIcon } from '@mui/icons-material';
+import { Add as AddIcon, Delete as DeleteIcon, Edit as EditIcon, Assignment as AssignmentIcon } from '@mui/icons-material';
 import Editor from '@monaco-editor/react';
 import axios from 'axios';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -62,6 +62,7 @@ const AdminDashboard = () => {
   const [editingProgram, setEditingProgram] = useState(null);
   const [editProgramTitle, setEditProgramTitle] = useState('');
   const [editProgramDescription, setEditProgramDescription] = useState('');
+  const [editProgramTestCases, setEditProgramTestCases] = useState([]);
   const [openSolutionDialog, setOpenSolutionDialog] = useState(false);
   const [viewingSolution, setViewingSolution] = useState(null);
   const [editingAdmin, setEditingAdmin] = useState(null);
@@ -95,6 +96,7 @@ const AdminDashboard = () => {
   const [editingCandidate, setEditingCandidate] = useState(null);
   const [openEditCandidateDialog, setOpenEditCandidateDialog] = useState(false);
   const [editCandidatePassword, setEditCandidatePassword] = useState('');
+  const [candidateDialogTab, setCandidateDialogTab] = useState(0);
   
   // Delete confirmation states
   const [deleteConfirmDialog, setDeleteConfirmDialog] = useState({ open: false, type: '', id: null, name: '' });
@@ -179,6 +181,16 @@ const AdminDashboard = () => {
 
   const handleCreateSession = async () => {
     try {
+      if (!sessionName || sessionName.trim().length === 0) {
+        addSnackbar('Test name is required', 'warning');
+        return;
+      }
+
+      if (!excelFile) {
+        addSnackbar('No file found to import the programs', 'warning');
+        return;
+      }
+
       const formData = new FormData();
       formData.append('name', sessionName);
       formData.append('testType', testType);
@@ -306,6 +318,7 @@ const AdminDashboard = () => {
       setCandidatePassword('');
       setCandidateTestType('');
       setCandidateTestSession('');
+      setCandidateDialogTab(0);
       setOpenCandidateDialog(false);
       fetchCandidates();
     } catch (err) {
@@ -619,7 +632,6 @@ const AdminDashboard = () => {
       setMcqQuestions(session.mcqQuestions || []);
     } else {
       setSelectedPrograms(session.programs.map(p => p._id || p));
-      // Set programs to only the session's programs instead of all programs
       setPrograms(session.programs || []);
     }
     
@@ -645,7 +657,6 @@ const AdminDashboard = () => {
       setSessionDuration(60);
       setSelectedPrograms([]);
       fetchSessions();
-      fetchPrograms(); // Restore full programs list
     } catch (err) {
       console.error(err);
       addSnackbar('Failed to update test session', 'error');
@@ -676,26 +687,56 @@ const AdminDashboard = () => {
     setEditingProgram(program._id);
     setEditProgramTitle(program.title);
     setEditProgramDescription(program.description);
+    setEditProgramTestCases(program.testCases || []);
   };
 
   const handleCancelEditProgram = () => {
     setEditingProgram(null);
     setEditProgramTitle('');
     setEditProgramDescription('');
+    setEditProgramTestCases([]);
   };
 
   const handleUpdateProgram = async (programId) => {
     try {
-      await axios.put(`/api/admin/program/${programId}`, {
+      const response = await axios.put(`/api/admin/program/${programId}`, {
         title: editProgramTitle,
         description: editProgramDescription,
+        testCases: editProgramTestCases,
       }, {
         withCredentials: true
       });
-      await fetchPrograms();
+      
+      // Update the specific program in the current programs list
+      setPrograms(prevPrograms => 
+        prevPrograms.map(p => 
+          p._id === programId ? response.data : p
+        )
+      );
+      
+      // Also update in sessions list only if the session contains this program
+      setSessions(prevSessions =>
+        prevSessions.map(session => {
+          // Check if this session has this program
+          const hasProgramInSession = session.programs?.some(p => (p._id || p) === programId);
+          if (!hasProgramInSession) {
+            return session; // Don't modify sessions that don't have this program
+          }
+          
+          return {
+            ...session,
+            programs: session.programs.map(p =>
+              (p._id || p) === programId ? response.data : p
+            )
+          };
+        })
+      );
+      
       setEditingProgram(null);
       setEditProgramTitle('');
       setEditProgramDescription('');
+      setEditProgramTestCases([]);
+      addSnackbar('Program updated successfully', 'success');
     } catch (err) {
       console.error(err);
       addSnackbar('Failed to update program', 'error');
@@ -1090,6 +1131,17 @@ const AdminDashboard = () => {
                             size="small" 
                             onClick={(e) => {
                               e.stopPropagation();
+                              handleViewTestHistory(candidate);
+                            }}
+                            color="info"
+                            sx={{ mr: 1 }}
+                          >
+                            <AssignmentIcon fontSize="small" />
+                          </IconButton>
+                          <IconButton 
+                            size="small" 
+                            onClick={(e) => {
+                              e.stopPropagation();
                               handleEditCandidate(candidate);
                             }}
                             color="primary"
@@ -1248,7 +1300,7 @@ const AdminDashboard = () => {
         <DialogTitle>Create Test Session</DialogTitle>
         <DialogContent>
           <TextField
-            label="Session Name"
+            label="Test Name"
             fullWidth
             margin="normal"
             value={sessionName}
@@ -1281,10 +1333,20 @@ const AdminDashboard = () => {
             {testType === 'Coding' ? (
               <>
                 <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
-                  Required columns: <strong>Title</strong>, <strong>Description</strong>
+                  <strong>Required columns:</strong> Title, Description
                 </Typography>
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
-                  Optional column: <strong>TestCases</strong> (can be JSON array or plain text)
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
+                  <strong>Optional column:</strong> TestCases (can be JSON array or plain text)
+                </Typography>
+                <Typography variant="caption" color="info.main" sx={{ display: 'block', mb: 2, fontStyle: 'italic' }}>
+                  <strong>TestCases: </strong><br/>
+                  &ensp;&ensp; <strong>JSON:</strong> [&#123;"input":"5","output":"120"&#125;,&#123;"input":"3","output":"6"&#125;] <br/>
+                  &ensp;&ensp; <strong>Plain Text: </strong>Input: 5<br/>
+                  &ensp;&ensp;&ensp;&ensp;
+                  &ensp;&ensp;&ensp;&ensp;
+                  &ensp;&ensp;&ensp;&ensp;
+                  &ensp;&ensp;&ensp;
+                  Output: 120
                 </Typography>
               </>
             ) : (
@@ -1325,95 +1387,113 @@ const AdminDashboard = () => {
       </Dialog>
 
       {/* Create Candidate Dialog */}
-      <Dialog open={openCandidateDialog} onClose={() => setOpenCandidateDialog(false)} maxWidth="sm" fullWidth>
+      <Dialog open={openCandidateDialog} onClose={() => {
+        setOpenCandidateDialog(false);
+        setCandidateDialogTab(0);
+        setCandidateFile(null);
+      }} maxWidth="sm" fullWidth>
         <DialogTitle>Create Candidate</DialogTitle>
+        <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
+          <Tabs value={candidateDialogTab} onChange={(e, newValue) => setCandidateDialogTab(newValue)}>
+            <Tab label="Single Candidate" />
+            <Tab label="Bulk Upload" />
+          </Tabs>
+        </Box>
         <DialogContent>
-          <TextField
-            label="Username"
-            fullWidth
-            margin="normal"
-            value={candidateUsername}
-            onChange={e => setCandidateUsername(e.target.value)}
-            disabled={!!candidateFile}
-            required
-          />
-          <TextField
-            label="Password"
-            type="password"
-            fullWidth
-            margin="normal"
-            value={candidatePassword}
-            onChange={e => setCandidatePassword(e.target.value)}
-            disabled={!!candidateFile}
-            required
-          />
-          <FormControl fullWidth margin="normal" disabled={!!candidateFile} required>
-            <InputLabel>Test Type</InputLabel>
-            <Select
-              value={candidateTestType}
-              onChange={e => {
-                setCandidateTestType(e.target.value);
-                setCandidateTestSession(''); // Reset test selection when test type changes
-              }}
-              label="Test Type"
-            >
-              {[...new Set(sessions.map(s => s.testType || 'Coding'))].map((type) => (
-                <MenuItem key={type} value={type}>
-                  {type}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-          <FormControl fullWidth margin="normal" disabled={!!candidateFile || !candidateTestType} required>
-            <InputLabel>Test Name</InputLabel>
-            <Select
-              value={candidateTestSession}
-              onChange={e => setCandidateTestSession(e.target.value)}
-              label="Test Name"
-            >
-              {sessions
-                .filter(session => (session.testType || 'Coding') === candidateTestType)
-                .map((session) => (
-                  <MenuItem key={session._id} value={session._id}>
-                    {session.name}
-                  </MenuItem>
-                ))}
-            </Select>
-          </FormControl>
-          
-          <Box sx={{ mt: 3, mb: 2 }}>
-            <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 600 }}>
-              Or Upload Candidates (Excel/CSV File)
-            </Typography>
-            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
-              Required columns: <strong>Username</strong>, <strong>Password</strong>, <strong>TestType</strong>, <strong>TestName</strong>
-            </Typography>
-            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
-              Note: TestType should be 'Coding' or 'MCQ'. TestName should match Test names (case insensitive)
-            </Typography>
-            <Button
-              variant="outlined"
-              component="label"
-              fullWidth
-              sx={{ textTransform: 'none' }}
-            >
-              {candidateFile ? candidateFile.name : 'Choose Excel/CSV File'}
-              <input
-                type="file"
-                hidden
-                accept=".xlsx,.xls,.csv"
-                onChange={(e) => setCandidateFile(e.target.files[0])}
+          {candidateDialogTab === 0 && (
+            <Box>
+              <TextField
+                label="Username"
+                fullWidth
+                margin="normal"
+                value={candidateUsername}
+                onChange={e => setCandidateUsername(e.target.value)}
+                required
               />
-            </Button>
-            {candidateFile && (
-              <Typography variant="caption" color="success.main" sx={{ mt: 1, display: 'block' }}>
-                ✓ File selected: {candidateFile.name}
+              <TextField
+                label="Password"
+                type="password"
+                fullWidth
+                margin="normal"
+                value={candidatePassword}
+                onChange={e => setCandidatePassword(e.target.value)}
+                required
+              />
+              <FormControl fullWidth margin="normal" required>
+                <InputLabel>Test Type</InputLabel>
+                <Select
+                  value={candidateTestType}
+                  onChange={e => {
+                    setCandidateTestType(e.target.value);
+                    setCandidateTestSession(''); // Reset test selection when test type changes
+                  }}
+                  label="Test Type"
+                >
+                  {[...new Set(sessions.map(s => s.testType || 'Coding'))].map((type) => (
+                    <MenuItem key={type} value={type}>
+                      {type}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+              <FormControl fullWidth margin="normal" disabled={!candidateTestType} required>
+                <InputLabel>Test Name</InputLabel>
+                <Select
+                  value={candidateTestSession}
+                  onChange={e => setCandidateTestSession(e.target.value)}
+                  label="Test Name"
+                >
+                  {sessions
+                    .filter(session => (session.testType || 'Coding') === candidateTestType)
+                    .map((session) => (
+                      <MenuItem key={session._id} value={session._id}>
+                        {session.name}
+                      </MenuItem>
+                    ))}
+                </Select>
+              </FormControl>
+            </Box>
+          )}
+          
+          {candidateDialogTab === 1 && (
+            <Box sx={{ mt: 2 }}>
+              <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 600 }}>
+                Upload Candidates (Excel/CSV File)
               </Typography>
-            )}
-          </Box>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
+                Required columns: <strong>Username</strong>, <strong>Password</strong>, <strong>TestType</strong>, <strong>TestName</strong>
+              </Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
+                Note: TestType should be 'Coding' or 'MCQ'. TestName should match Test names (case insensitive)
+              </Typography>
+              <Button
+                variant="outlined"
+                component="label"
+                fullWidth
+                sx={{ textTransform: 'none' }}
+              >
+                {candidateFile ? candidateFile.name : 'Choose Excel/CSV File'}
+                <input
+                  type="file"
+                  hidden
+                  accept=".xlsx,.xls,.csv"
+                  onChange={(e) => setCandidateFile(e.target.files[0])}
+                />
+              </Button>
+              {candidateFile && (
+                <Typography variant="caption" color="success.main" sx={{ mt: 1, display: 'block' }}>
+                  ✓ File selected: {candidateFile.name}
+                </Typography>
+              )}
+            </Box>
+          )}
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setOpenCandidateDialog(false)}>Cancel</Button>
+          <Button onClick={() => {
+            setOpenCandidateDialog(false);
+            setCandidateDialogTab(0);
+            setCandidateFile(null);
+          }}>Cancel</Button>
           <Button onClick={handleCreateCandidate} variant="contained">Create</Button>
         </DialogActions>
       </Dialog>
@@ -1535,7 +1615,67 @@ const AdminDashboard = () => {
                                 rows={4}
                                 value={editProgramDescription}
                                 onChange={e => setEditProgramDescription(e.target.value)}
+                                sx={{ mb: 2 }}
                               />
+                              
+                              <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1 }}>
+                                Test Cases
+                              </Typography>
+                              {editProgramTestCases.map((testCase, index) => (
+                                <Box key={index} sx={{ mb: 2, p: 2, border: '1px solid #e0e0e0', borderRadius: 1, bgcolor: '#fafafa' }}>
+                                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                                    <Typography variant="body2" fontWeight={600}>Test Case {index + 1}</Typography>
+                                    <IconButton
+                                      size="small"
+                                      color="error"
+                                      onClick={() => {
+                                        const newTestCases = editProgramTestCases.filter((_, i) => i !== index);
+                                        setEditProgramTestCases(newTestCases);
+                                      }}
+                                    >
+                                      <DeleteIcon fontSize="small" />
+                                    </IconButton>
+                                  </Box>
+                                  <TextField
+                                    label="Input"
+                                    fullWidth
+                                    size="small"
+                                    multiline
+                                    rows={2}
+                                    value={testCase.input}
+                                    onChange={e => {
+                                      const newTestCases = [...editProgramTestCases];
+                                      newTestCases[index].input = e.target.value;
+                                      setEditProgramTestCases(newTestCases);
+                                    }}
+                                    sx={{ mb: 1 }}
+                                  />
+                                  <TextField
+                                    label="Expected Output"
+                                    fullWidth
+                                    size="small"
+                                    multiline
+                                    rows={2}
+                                    value={testCase.output}
+                                    onChange={e => {
+                                      const newTestCases = [...editProgramTestCases];
+                                      newTestCases[index].output = e.target.value;
+                                      setEditProgramTestCases(newTestCases);
+                                    }}
+                                  />
+                                </Box>
+                              ))}
+                              <Button
+                                size="small"
+                                variant="outlined"
+                                onClick={() => {
+                                  setEditProgramTestCases([...editProgramTestCases, { input: '', output: '' }]);
+                                }}
+                                sx={{ mb: 2 }}
+                              >
+                                + Add Test Case
+                              </Button>
+                              
                               <Box sx={{ mt: 1, display: 'flex', gap: 1 }}>
                                 <Button 
                                   size="small" 
