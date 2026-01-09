@@ -267,6 +267,7 @@ exports.bulkCreateCandidates = async (req, res) => {
 
     let created = 0;
     let skipped = 0;
+    let testsAssigned = 0;
     const errors = [];
 
     // Get all test sessions for matching
@@ -313,9 +314,38 @@ exports.bulkCreateCandidates = async (req, res) => {
         // Check if user already exists
         let user = await User.findOne({ username: username });
         if (user) {
-          console.log('User already exists:', username);
-          errors.push(`User ${username} already exists`);
-          skipped++;
+          console.log('User already exists, assigning new test:', username);
+          
+          // Get the full test session
+          const testSession = await TestSession.findById(testSessionId);
+          
+          // Deactivate all other tests for this candidate
+          await TestAssignment.updateMany(
+            { candidate: user._id, isActive: true },
+            { isActive: false }
+          );
+          
+          // Create new test assignment and make it active
+          await TestAssignment.create({
+            candidate: user._id,
+            testSession: testSessionId,
+            testName: testSession.name,
+            testType: testSession.testType,
+            status: 'not-started',
+            isActive: true,
+            assignedAt: new Date()
+          });
+          
+          // Update user's assignedTest
+          user.assignedTest = testSessionId;
+          user.testStatus = 'not-started';
+          user.testStartTime = null;
+          user.testDuration = null;
+          user.assignedProgram = null;
+          await user.save();
+          
+          testsAssigned++;
+          console.log('Assigned new test to existing candidate:', username);
           continue;
         }
 
@@ -352,11 +382,12 @@ exports.bulkCreateCandidates = async (req, res) => {
       }
     }
 
-    console.log(`Successfully created ${created} candidates, skipped ${skipped}`);
+    console.log(`Successfully created ${created} candidates, assigned ${testsAssigned} tests to existing candidates, skipped ${skipped}`);
     
     res.json({ 
-      msg: `Created ${created} candidates, skipped ${skipped}`,
+      msg: `Created ${created} candidates, assigned ${testsAssigned} tests to existing candidates, skipped ${skipped}`,
       created,
+      testsAssigned,
       skipped,
       errors: errors.length > 0 ? errors : undefined
     });

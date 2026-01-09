@@ -234,10 +234,17 @@ const AdminDashboard = () => {
         });
 
         // Show messages based on results
-        if (res.data.created > 0 && res.data.skipped === 0) {
-          // All records uploaded successfully
+        if (res.data.created > 0 && res.data.testsAssigned === 0 && res.data.skipped === 0) {
+          // All new candidates created successfully
           addSnackbar(`${res.data.created} candidate(s) created successfully`, 'success');
-        } else if (res.data.created === 0 && res.data.skipped > 0) {
+        } else if (res.data.created === 0 && res.data.testsAssigned > 0 && res.data.skipped === 0) {
+          // All were existing candidates with tests assigned
+          addSnackbar(`${res.data.testsAssigned} test(s) assigned to existing candidate(s)`, 'success');
+        } else if (res.data.created > 0 && res.data.testsAssigned > 0 && res.data.skipped === 0) {
+          // Mix of new candidates and test assignments
+          addSnackbar(`${res.data.created} candidate(s) created successfully`, 'success');
+          addSnackbar(`${res.data.testsAssigned} test(s) assigned to existing candidate(s)`, 'info');
+        } else if (res.data.created === 0 && res.data.testsAssigned === 0 && res.data.skipped > 0) {
           // All records failed
           const messages = [];
           
@@ -265,8 +272,8 @@ const AdminDashboard = () => {
           }
           
           addSnackbar(messages.join('. '), 'error');
-        } else if (res.data.created > 0 && res.data.skipped > 0) {
-          // Partial success - show both success and errors
+        } else {
+          // Mixed results with some successes and some failures
           const errorMessages = [];
           
           const missingFieldsCount = res.data.errors?.filter(err => 
@@ -292,9 +299,17 @@ const AdminDashboard = () => {
             errorMessages.push(`${duplicateCount} skipped (duplicates)`);
           }
           
-          // Show both messages stacked
-          addSnackbar(`${res.data.created} candidate(s) created successfully`, 'success');
-          addSnackbar(errorMessages.join('. '), 'error');
+          // Show success messages
+          if (res.data.created > 0) {
+            addSnackbar(`${res.data.created} candidate(s) created successfully`, 'success');
+          }
+          if (res.data.testsAssigned > 0) {
+            addSnackbar(`${res.data.testsAssigned} test(s) assigned to existing candidate(s)`, 'info');
+          }
+          // Show error messages if any
+          if (errorMessages.length > 0) {
+            addSnackbar(errorMessages.join('. '), 'error');
+          }
         }
         
         setCandidateFile(null);
