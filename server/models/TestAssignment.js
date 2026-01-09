@@ -11,6 +11,10 @@ const TestAssignmentSchema = new mongoose.Schema({
     ref: 'TestSession',
     required: true,
   },
+  testName: {
+    type: String,
+    required: true,
+  },
   program: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Program',

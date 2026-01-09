@@ -233,6 +233,7 @@ exports.createCandidate = async (req, res) => {
     await TestAssignment.create({
       candidate: user._id,
       testSession: testSessionId,
+      testName: testSession.name,
       testType: testSession.testType,
       status: 'not-started',
       isActive: true,
@@ -335,6 +336,7 @@ exports.bulkCreateCandidates = async (req, res) => {
         const newAssignment = await TestAssignment.create({
           candidate: user._id,
           testSession: testSessionId,
+          testName: testSession.name,
           testType: testSession.testType,
           status: 'not-started',
           isActive: true,
@@ -688,7 +690,7 @@ exports.getCandidateTestHistory = async (req, res) => {
     const { candidateId } = req.params;
     const Solution = require('../models/Solution');
     
-    // Fetch existing test assignments
+    // Fetch existing test assignments (populate testSession but it's optional now since we have testName)
     const assignments = await TestAssignment.find({ candidate: candidateId })
       .populate('testSession', 'name testType duration')
       .populate('program', 'title')
@@ -698,6 +700,14 @@ exports.getCandidateTestHistory = async (req, res) => {
     const assignmentsWithScores = await Promise.all(
       assignments.map(async (assignment) => {
         const assignmentObj = assignment.toObject();
+        
+        // Use stored testName if testSession is deleted
+        if (!assignmentObj.testSession && assignmentObj.testName) {
+          assignmentObj.testSession = {
+            name: assignmentObj.testName,
+            testType: assignmentObj.testType
+          };
+        }
         
         if (assignment.testType === 'Coding' && assignment.status === 'completed' && assignment.program) {
           const solution = await Solution.findOne({
@@ -747,6 +757,7 @@ exports.getCandidateTestHistory = async (req, res) => {
         const newAssignment = new TestAssignment({
           candidate: candidateId,
           testSession: testSession._id,
+          testName: testSession.name,
           program: candidate.assignedProgram?._id,
           testType: testSession.testType,
           status: candidate.testStatus,
@@ -804,6 +815,7 @@ exports.assignTestToCandidate = async (req, res) => {
     const assignment = new TestAssignment({
       candidate: candidateId,
       testSession: testSessionId,
+      testName: testSession.name,
       testType: testSession.testType,
       isActive: makeActive || false,
     });
@@ -1068,7 +1080,7 @@ exports.exportCandidatesData = async (req, res) => {
           }
         }
         
-        const testName = assignment.testSession ? assignment.testSession.name : 'Unknown Test';
+        const testName = assignment.testName || (assignment.testSession ? assignment.testSession.name : 'Unknown Test');
         allTestNames.add(testName);
         
         // Store score for this test (if same test taken multiple times, keep track of all scores)

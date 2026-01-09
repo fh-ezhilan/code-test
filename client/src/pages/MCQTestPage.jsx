@@ -190,14 +190,14 @@ const MCQTestPage = () => {
         lastSwitchTime = now;
         setTabSwitchCount(prev => {
           const newCount = prev + 1;
-          
+          setTabSwitchDialog(true);
           // If this is the second switch, terminate test
-          if (newCount >= 2) {
-            handleTabSwitchTermination(newCount);
-          } else {
-            // First switch, show warning
-            setTabSwitchDialog(true);
-          }
+          // if (newCount >= 2) {
+          //   handleTabSwitchTermination(newCount);
+          // } else {
+          //   // First switch, show warning
+          //   setTabSwitchDialog(true);
+          // }
           
           return newCount;
         });
