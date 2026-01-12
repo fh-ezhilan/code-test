@@ -33,6 +33,8 @@ router.get('/candidate/:candidateId/test-history', isAdmin, adminController.getC
 router.post('/test-assignment', isAdmin, adminController.assignTestToCandidate);
 router.put('/test-assignment/:assignmentId/set-active', isAdmin, adminController.setActiveTest);
 router.get('/test-assignment/:assignmentId/submission', isAdmin, adminController.getTestAssignmentSubmission);
+router.put('/test-assignment/:assignmentId/score', isAdmin, adminController.updateExplanationScore);
+router.put('/test-assignment/:assignmentId/coding-score', isAdmin, adminController.updateCodingScore);
 router.delete('/test-assignment/:assignmentId', isAdmin, adminController.deleteTestAssignment);
 
 // Export routes

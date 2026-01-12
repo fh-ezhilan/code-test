@@ -8,6 +8,7 @@ import CandidateDashboard from './pages/CandidateDashboard';
 import TestInstructionsPage from './pages/TestInstructionsPage';
 import TestPage from './pages/TestPage';
 import MCQTestPage from './pages/MCQTestPage';
+import ExplanationTestPage from './pages/ExplanationTestPage';
 import SubmissionSuccessPage from './pages/SubmissionSuccessPage';
 import TestCompletedPage from './pages/TestCompletedPage';
 
@@ -55,6 +56,14 @@ function App() {
             element={
               <ProtectedRoute allowedRoles={['candidate']}>
                 <MCQTestPage />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/test/explanation" 
+            element={
+              <ProtectedRoute allowedRoles={['candidate']}>
+                <ExplanationTestPage />
               </ProtectedRoute>
             } 
           />

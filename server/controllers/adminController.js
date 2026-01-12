@@ -58,6 +58,7 @@ exports.createTestSession = async (req, res) => {
     console.log('Request body:', req.body);
     let programIds = [];
     let mcqQuestionIds = [];
+    let explanationQuestionIds = [];
 
     // If Excel/CSV file is uploaded, parse and create programs or MCQ questions
     if (req.file) {
@@ -153,12 +154,31 @@ exports.createTestSession = async (req, res) => {
             console.log('Created MCQ question:', savedQuestion.question);
           }
           console.log(`Successfully created ${mcqQuestionIds.length} MCQ questions`);
+        } else if (testType === 'Explanation') {
+          // Validate and create Explanation questions
+          const ExplanationQuestion = require('../models/ExplanationQuestion');
+          for (const row of data) {
+            if (!row.Question) {
+              console.log('Skipping row due to missing Question:', row);
+              continue; // Skip rows without required fields
+            }
+
+            const newExplanationQuestion = new ExplanationQuestion({
+              question: row.Question,
+            });
+            const savedQuestion = await newExplanationQuestion.save();
+            explanationQuestionIds.push(savedQuestion._id);
+            console.log('Created Explanation question:', savedQuestion.question);
+          }
+          console.log(`Successfully created ${explanationQuestionIds.length} Explanation questions`);
         }
       } catch (parseErr) {
         console.error('Error parsing file:', parseErr);
         const errorMsg = testType === 'Coding' 
           ? 'Invalid file format. Ensure columns are: Title, Description, TestCases'
-          : 'Invalid file format. Ensure columns are: Question, Option1, Option2, Option3, Option4, CorrectOption';
+          : testType === 'MCQ'
+          ? 'Invalid file format. Ensure columns are: Question, Option1, Option2, Option3, Option4, CorrectOption'
+          : 'Invalid file format. Ensure column is: Question';
         return res.status(400).json({ 
           msg: errorMsg,
           error: parseErr.message 
@@ -169,6 +189,7 @@ exports.createTestSession = async (req, res) => {
     const newTestSession = new TestSession({
       name,
       testType,
+      explanationQuestions: explanationQuestionIds,
       programs: programIds,
       mcqQuestions: mcqQuestionIds,
       duration,
@@ -430,22 +451,32 @@ exports.getCandidates = async (req, res) => {
         for (const assignment of completedAssignments) {
           let percentage;
           
-          // For Coding tests, use AI evaluation score if available
-          if (assignment.testType === 'Coding' && assignment.program) {
-            const solution = await Solution.findOne({
-              candidate: candidate._id,
-              program: assignment.program._id
-            }).sort({ submittedAt: -1 });
-            
-            if (solution && solution.aiEvaluation && solution.aiEvaluation.overallScore !== undefined) {
-              percentage = solution.aiEvaluation.overallScore;
+          if (assignment.testType === 'Coding') {
+            // Prioritize manual score over AI score
+            if (assignment.score !== undefined && assignment.score !== null) {
+              percentage = assignment.score; // Manual score is already 0-100
+            } else if (assignment.program) {
+              // Fallback to AI evaluation score
+              const solution = await Solution.findOne({
+                candidate: candidate._id,
+                program: assignment.program._id
+              }).sort({ submittedAt: -1 });
+              
+              if (solution && solution.aiEvaluation && solution.aiEvaluation.overallScore !== undefined) {
+                percentage = solution.aiEvaluation.overallScore;
+              } else {
+                percentage = 0; // No score available
+              }
             } else {
-              // Fallback to test execution score
-              percentage = (assignment.score / assignment.totalQuestions) * 100;
+              percentage = 0;
             }
           } else {
-            // For MCQ tests, use regular score
-            percentage = (assignment.score / assignment.totalQuestions) * 100;
+            // For MCQ and Explanation tests, calculate percentage from score/totalQuestions
+            if (assignment.totalQuestions && assignment.totalQuestions > 0) {
+              percentage = Math.round((assignment.score / assignment.totalQuestions) * 100);
+            } else {
+              percentage = 0;
+            }
           }
           
           allScores.push(percentage);
@@ -996,21 +1027,125 @@ exports.getTestAssignmentSubmission = async (req, res) => {
       
       result.mcqAnswer = mcqAnswer;
       result.questions = testSession.mcqQuestions;
+    } else if (assignment.testType === 'Explanation') {
+      const ExplanationAnswer = require('../models/ExplanationAnswer');
+      const explanationAnswer = await ExplanationAnswer.findOne({
+        candidate: assignment.candidate._id,
+        testSession: assignment.testSession._id
+      }).populate('answers.question').sort({ submittedAt: -1 }); // Get the most recent submission
+      
+      console.log('[Get Explanation Submission] Found ExplanationAnswer:', {
+        found: !!explanationAnswer,
+        answersCount: explanationAnswer?.answers?.length,
+        tabSwitchCount: explanationAnswer?.tabSwitchCount,
+        candidateId: assignment.candidate._id,
+        testSessionId: assignment.testSession._id
+      });
+      
+      const testSession = await TestSession.findById(assignment.testSession._id)
+        .populate('explanationQuestions');
+      
+      result.explanationAnswer = explanationAnswer;
+      result.questions = testSession.explanationQuestions;
     }
     
     console.log('Returning submission result:', {
       testType: result.testType,
       hasTabSwitchCount: result.testType === 'Coding' ? 
         (result.solution?.tabSwitchCount !== undefined) : 
-        (result.mcqAnswer?.tabSwitchCount !== undefined),
+        result.testType === 'MCQ' ?
+        (result.mcqAnswer?.tabSwitchCount !== undefined) :
+        (result.explanationAnswer?.tabSwitchCount !== undefined),
       tabSwitchCount: result.testType === 'Coding' ? 
         result.solution?.tabSwitchCount : 
-        result.mcqAnswer?.tabSwitchCount
+        result.testType === 'MCQ' ?
+        result.mcqAnswer?.tabSwitchCount :
+        result.explanationAnswer?.tabSwitchCount
     });
     
     res.json(result);
   } catch (err) {
     console.error('Error in getTestAssignmentSubmission:', err.message);
+    res.status(500).send('Server Error');
+  }
+};
+
+exports.updateExplanationScore = async (req, res) => {
+  try {
+    const { assignmentId } = req.params;
+    const { score } = req.body;
+    
+    const assignment = await TestAssignment.findById(assignmentId);
+    if (!assignment) {
+      return res.status(404).json({ msg: 'Test assignment not found' });
+    }
+    
+    if (assignment.testType !== 'Explanation') {
+      return res.status(400).json({ msg: 'This endpoint is only for Explanation tests' });
+    }
+    
+    // Validate score
+    if (score < 0 || score > assignment.totalQuestions) {
+      return res.status(400).json({ msg: `Score must be between 0 and ${assignment.totalQuestions}` });
+    }
+    
+    // Update ExplanationAnswer with score
+    const ExplanationAnswer = require('../models/ExplanationAnswer');
+    const explanationAnswer = await ExplanationAnswer.findOne({
+      candidate: assignment.candidate,
+      testSession: assignment.testSession
+    });
+    
+    if (explanationAnswer) {
+      explanationAnswer.score = score;
+      await explanationAnswer.save();
+    }
+    
+    // Update TestAssignment with score
+    assignment.score = score;
+    await assignment.save();
+    
+    res.json({ 
+      msg: 'Score updated successfully',
+      score,
+      totalQuestions: assignment.totalQuestions,
+      percentage: Math.round((score / assignment.totalQuestions) * 100)
+    });
+  } catch (err) {
+    console.error('Error in updateExplanationScore:', err.message);
+    res.status(500).send('Server Error');
+  }
+};
+
+exports.updateCodingScore = async (req, res) => {
+  try {
+    const { assignmentId } = req.params;
+    const { score } = req.body;
+    
+    const assignment = await TestAssignment.findById(assignmentId);
+    if (!assignment) {
+      return res.status(404).json({ msg: 'Test assignment not found' });
+    }
+    
+    if (assignment.testType !== 'Coding') {
+      return res.status(400).json({ msg: 'This endpoint is only for Coding tests' });
+    }
+    
+    // Validate score (0-100 for coding tests)
+    if (score < 0 || score > 100) {
+      return res.status(400).json({ msg: 'Score must be between 0 and 100' });
+    }
+    
+    // Update TestAssignment with manual score
+    assignment.score = score;
+    await assignment.save();
+    
+    res.json({ 
+      msg: 'Score updated successfully',
+      score
+    });
+  } catch (err) {
+    console.error('Error in updateCodingScore:', err.message);
     res.status(500).send('Server Error');
   }
 };
@@ -1087,8 +1222,11 @@ exports.exportCandidatesData = async (req, res) => {
         let score;
         
         if (assignment.testType === 'Coding') {
-          // Get AI score if available
-          if (assignment.program) {
+          // Prioritize manual score over AI score
+          if (assignment.score !== undefined && assignment.score !== null) {
+            score = assignment.score;
+          } else if (assignment.program) {
+            // Get AI score if available and no manual score
             const solution = await Solution.findOne({
               candidate: candidate._id,
               program: assignment.program
@@ -1103,7 +1241,7 @@ exports.exportCandidatesData = async (req, res) => {
             score = 0;
           }
         } else {
-          // MCQ test
+          // MCQ or Explanation test
           if (assignment.score !== undefined && assignment.totalQuestions) {
             score = Math.round((assignment.score / assignment.totalQuestions) * 100);
           } else {

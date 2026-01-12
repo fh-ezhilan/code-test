@@ -39,6 +39,8 @@ const TestInstructionsPage = () => {
         if (user?.testStatus === 'in-progress') {
           if (res.data.testType === 'MCQ') {
             navigate('/test/mcq');
+          } else if (res.data.testType === 'Explanation') {
+            navigate('/test/explanation');
           } else {
             navigate('/test');
           }
@@ -57,6 +59,8 @@ const TestInstructionsPage = () => {
       // Navigate based on test type
       if (instructions.testType === 'MCQ') {
         navigate('/test/mcq');
+      } else if (instructions.testType === 'Explanation') {
+        navigate('/test/explanation');
       } else {
         navigate('/test');
       }

@@ -21,7 +21,7 @@ const TestAssignmentSchema = new mongoose.Schema({
   },
   testType: {
     type: String,
-    enum: ['Coding', 'MCQ'],
+    enum: ['Coding', 'MCQ', 'Explanation'],
     required: true,
   },
   status: {

@@ -4,6 +4,7 @@ const Solution = require('../models/Solution');
 const MCQQuestion = require('../models/MCQQuestion');
 const MCQAnswer = require('../models/MCQAnswer');
 const TestAssignment = require('../models/TestAssignment');
+const ExplanationAnswer = require('../models/ExplanationAnswer');
 
 exports.getTestInstructions = async (req, res) => {
   try {
@@ -470,6 +471,7 @@ exports.submitMCQAnswers = async (req, res) => {
       await TestAssignment.create({
         candidate: req.user.id,
         testSession: user.assignedTest,
+        testName: testSession.name,
         testType: 'MCQ',
         status: 'completed',
         isActive: true,
@@ -486,6 +488,125 @@ exports.submitMCQAnswers = async (req, res) => {
     res.json({ 
       msg: 'MCQ answers submitted successfully',
       score,
+      totalQuestions,
+    });
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).send('Server Error');
+  }
+};
+
+exports.getExplanationQuestions = async (req, res) => {
+  try {
+    const User = require('../models/User');
+    const ExplanationQuestion = require('../models/ExplanationQuestion');
+    const user = await User.findById(req.user.id);
+    
+    if (!user || !user.assignedTest) {
+      return res.status(400).json({ msg: 'No test is assigned to you' });
+    }
+    
+    const testSession = await TestSession.findById(user.assignedTest).populate('explanationQuestions');
+    if (!testSession) {
+      return res.status(404).json({ msg: 'Assigned test session not found' });
+    }
+    
+    // Return questions
+    const questions = testSession.explanationQuestions.map(q => ({
+      _id: q._id,
+      question: q.question,
+    }));
+    
+    res.json({
+      testType: testSession.testType,
+      questions,
+      testStartTime: user.testStartTime,
+      testDuration: user.testDuration || testSession.duration,
+    });
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).send('Server Error');
+  }
+};
+
+exports.submitExplanationAnswers = async (req, res) => {
+  const { answers, tabSwitchCount = 0 } = req.body; // Array of { questionId, answer }
+  
+  console.log('[Submit Explanation Answers] Received data:', {
+    answersCount: answers?.length,
+    tabSwitchCount
+  });
+  
+  try {
+    const User = require('../models/User');
+    const ExplanationAnswer = require('../models/ExplanationAnswer');
+    const user = await User.findById(req.user.id);
+    
+    if (!user || !user.assignedTest) {
+      return res.status(400).json({ msg: 'No test assigned' });
+    }
+    
+    const testSession = await TestSession.findById(user.assignedTest).populate('explanationQuestions');
+    const totalQuestions = testSession.explanationQuestions.length;
+    
+    // Delete any existing ExplanationAnswer for this candidate and test session
+    await ExplanationAnswer.deleteMany({
+      candidate: req.user.id,
+      testSession: user.assignedTest
+    });
+    
+    // Save Explanation answers
+    const explanationAnswer = new ExplanationAnswer({
+      candidate: req.user.id,
+      testSession: user.assignedTest,
+      answers,
+      tabSwitchCount,
+      totalQuestions,
+    });
+    await explanationAnswer.save();
+    
+    console.log('[Submit Explanation Answers] Saved ExplanationAnswer:', {
+      id: explanationAnswer._id,
+      answersCount: explanationAnswer.answers?.length,
+      tabSwitchCount: explanationAnswer.tabSwitchCount
+    });
+    
+    // Update user status to completed
+    await User.findByIdAndUpdate(req.user.id, { testStatus: 'completed' });
+    
+    // Update or create test assignment
+    const existingAssignment = await TestAssignment.findOne({
+      candidate: req.user.id,
+      testSession: user.assignedTest,
+      isActive: true
+    });
+    
+    if (existingAssignment) {
+      await TestAssignment.findByIdAndUpdate(existingAssignment._id, {
+        status: 'completed',
+        completedAt: new Date(),
+        totalQuestions,
+      });
+    } else {
+      // Create TestAssignment if it doesn't exist
+      await TestAssignment.create({
+        candidate: req.user.id,
+        testSession: user.assignedTest,
+        testName: testSession.name,
+        testType: 'Explanation',
+        status: 'completed',
+        isActive: true,
+        totalQuestions,
+        assignedAt: user.createdAt || new Date(),
+        startedAt: user.testStartTime || new Date(),
+        completedAt: new Date(),
+        testStartTime: user.testStartTime,
+        testDuration: user.testDuration,
+      });
+    }
+    
+    res.json({ 
+      msg: 'Explanation answers submitted successfully',
       totalQuestions,
     });
   } catch (err) {

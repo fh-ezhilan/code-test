@@ -7,7 +7,7 @@ const TestSessionSchema = new mongoose.Schema({
   },
   testType: {
     type: String,
-    enum: ['Coding', 'MCQ'],
+    enum: ['Coding', 'MCQ', 'Explanation'],
     default: 'Coding',
   },
   programs: [
@@ -20,6 +20,12 @@ const TestSessionSchema = new mongoose.Schema({
     {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'MCQQuestion',
+    },
+  ],
+  explanationQuestions: [
+    {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'ExplanationQuestion',
     },
   ],
   duration: {

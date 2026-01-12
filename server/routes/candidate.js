@@ -13,4 +13,8 @@ router.post('/test/submit', isCandidate, candidateController.submitSolution);
 router.get('/test/mcq/questions', isCandidate, candidateController.getMCQQuestions);
 router.post('/test/mcq/submit', isCandidate, candidateController.submitMCQAnswers);
 
+// Explanation routes
+router.get('/test/explanation/questions', isCandidate, candidateController.getExplanationQuestions);
+router.post('/test/explanation/submit', isCandidate, candidateController.submitExplanationAnswers);
+
 module.exports = router;

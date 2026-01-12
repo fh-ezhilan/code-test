@@ -123,6 +123,11 @@ const AdminDashboard = () => {
   const [makeActiveTest, setMakeActiveTest] = useState(true);
   const [openSubmissionDialog, setOpenSubmissionDialog] = useState(false);
   const [viewingSubmission, setViewingSubmission] = useState(null);
+  const [currentAssignmentId, setCurrentAssignmentId] = useState(null);
+  const [explanationScore, setExplanationScore] = useState('');
+  const [savingScore, setSavingScore] = useState(false);
+  const [codingScore, setCodingScore] = useState('');
+  const [savingCodingScore, setSavingCodingScore] = useState(false);
 
   useEffect(() => {
     fetchCandidates();
@@ -876,10 +881,150 @@ const AdminDashboard = () => {
         withCredentials: true
       });
       setViewingSubmission(res.data);
+      setCurrentAssignmentId(assignment._id); // Store assignment ID separately
+      // Set initial score if available for explanation tests
+      if (res.data.testType === 'Explanation' && res.data.explanationAnswer?.score !== undefined && res.data.explanationAnswer?.score !== null) {
+        setExplanationScore(res.data.explanationAnswer.score.toString());
+      } else {
+        setExplanationScore('');
+      }
+      // Set initial score for coding tests
+      if (res.data.testType === 'Coding') {
+        const manualScore = assignment.score;
+        const aiScore = res.data.solution?.aiEvaluation?.overallScore;
+        if (manualScore !== undefined && manualScore !== null) {
+          setCodingScore(manualScore.toString());
+        } else if (aiScore !== undefined) {
+          setCodingScore(aiScore.toString());
+        } else {
+          setCodingScore('');
+        }
+      } else {
+        setCodingScore('');
+      }
       setOpenSubmissionDialog(true);
     } catch (err) {
       console.error(err);
       addSnackbar('Failed to load submission', 'error');
+    }
+  };
+
+  const handleSaveExplanationScore = async () => {
+    const score = parseInt(explanationScore);
+    const totalQuestions = viewingSubmission?.questions?.length || 0;
+
+    // Validation
+    if (isNaN(score)) {
+      addSnackbar('Please enter a valid number', 'error');
+      return;
+    }
+    if (score < 0 || score > totalQuestions) {
+      addSnackbar(`Score must be between 0 and ${totalQuestions}`, 'error');
+      return;
+    }
+
+    try {
+      setSavingScore(true);
+      
+      if (!currentAssignmentId) {
+        addSnackbar('Assignment ID not found', 'error');
+        setSavingScore(false);
+        return;
+      }
+
+      const res = await axios.put(
+        `/api/admin/test-assignment/${currentAssignmentId}/score`,
+        { score },
+        { withCredentials: true }
+      );
+
+      // Update the viewing submission with the new score
+      setViewingSubmission(prev => ({
+        ...prev,
+        explanationAnswer: {
+          ...prev.explanationAnswer,
+          score: score
+        }
+      }));
+
+      addSnackbar('Score saved successfully', 'success');
+      
+      // Refresh test history if the dialog is open
+      if (selectedCandidateForHistory) {
+        try {
+          const historyRes = await axios.get(`/api/admin/candidate/${selectedCandidateForHistory._id}/test-history`, {
+            withCredentials: true
+          });
+          setTestHistory(historyRes.data);
+        } catch (historyErr) {
+          console.error('Error refreshing test history:', historyErr);
+          // Don't show error to user, score was saved successfully
+        }
+      }
+    } catch (err) {
+      console.error(err);
+      addSnackbar(err.response?.data?.msg || 'Failed to save score', 'error');
+    } finally {
+      setSavingScore(false);
+    }
+  };
+
+  const handleSaveCodingScore = async () => {
+    const score = parseInt(codingScore);
+
+    // Validation
+    if (isNaN(score)) {
+      addSnackbar('Please enter a valid number', 'error');
+      return;
+    }
+    if (score < 0 || score > 100) {
+      addSnackbar('Score must be between 0 and 100', 'error');
+      return;
+    }
+
+    try {
+      setSavingCodingScore(true);
+      
+      if (!currentAssignmentId) {
+        addSnackbar('Assignment ID not found', 'error');
+        setSavingCodingScore(false);
+        return;
+      }
+
+      const res = await axios.put(
+        `/api/admin/test-assignment/${currentAssignmentId}/coding-score`,
+        { score },
+        { withCredentials: true }
+      );
+
+      // Update the viewing submission with the new score
+      setViewingSubmission(prev => ({
+        ...prev,
+        solution: {
+          ...prev.solution,
+          manualScore: score
+        }
+      }));
+
+      addSnackbar('Score saved successfully', 'success');
+      
+      // Refresh test history if the dialog is open
+      if (selectedCandidateForHistory) {
+        try {
+          const historyRes = await axios.get(`/api/admin/candidate/${selectedCandidateForHistory._id}/test-history`, {
+            withCredentials: true
+          });
+          setTestHistory(historyRes.data);
+        } catch (historyErr) {
+          console.error('Error refreshing test history:', historyErr);
+          // Don't show error to user, score was saved successfully
+        }
+      }
+    } catch (err) {
+      console.error(err);
+      addSnackbar(err.response?.data?.msg || 'Failed to save score', 'error');
+    } finally {
+      setSavingCodingScore(false);
     }
   };
   
@@ -1330,6 +1475,7 @@ const AdminDashboard = () => {
             >
               <MenuItem value="Coding">Coding</MenuItem>
               <MenuItem value="MCQ">MCQ</MenuItem>
+              <MenuItem value="Explanation">Explanation</MenuItem>
             </Select>
           </FormControl>
           <TextField
@@ -1343,7 +1489,7 @@ const AdminDashboard = () => {
           
           <Box sx={{ mt: 3, mb: 2 }}>
             <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 600 }}>
-              {testType === 'Coding' ? 'Upload Programs (Excel/CSV File)' : 'Upload MCQ Questions (Excel/CSV File)'}
+              {testType === 'Coding' ? 'Upload Programs (Excel/CSV File)' : testType === 'MCQ' ? 'Upload MCQ Questions (Excel/CSV File)' : 'Upload Explanation Questions (Excel/CSV File)'}
             </Typography>
             {testType === 'Coding' ? (
               <>
@@ -1364,13 +1510,22 @@ const AdminDashboard = () => {
                   Output: 120
                 </Typography>
               </>
-            ) : (
+            ) : testType === 'MCQ' ? (
               <>
                 <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
                   Required columns: <strong>Question</strong>, <strong>Option1</strong>, <strong>Option2</strong>, <strong>Option3</strong>, <strong>Option4</strong>, <strong>CorrectOption</strong>
                 </Typography>
                 <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
                   Note: CorrectOption should be a number (1, 2, 3, or 4)
+                </Typography>
+              </>
+            ) : (
+              <>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
+                  Required column: <strong>Question</strong>
+                </Typography>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
+                  Note: Each row should contain one question that requires a detailed explanation
                 </Typography>
               </>
             )}
@@ -1568,6 +1723,7 @@ const AdminDashboard = () => {
             >
               <MenuItem value="Coding">Coding</MenuItem>
               <MenuItem value="MCQ">MCQ</MenuItem>
+              <MenuItem value="Explanation">Explanation</MenuItem>
             </Select>
           </FormControl>
           <TextField
@@ -2074,9 +2230,13 @@ const AdminDashboard = () => {
                           <Typography variant="body2" fontWeight={600}>
                             {assignment.score}/{assignment.totalQuestions} ({Math.round((assignment.score / assignment.totalQuestions) * 100)}%)
                           </Typography>
+                        ) : assignment.testType === 'Explanation' && assignment.score !== undefined && assignment.score !== null ? (
+                          <Typography variant="body2" fontWeight={600}>
+                            {assignment.score}/{assignment.totalQuestions} ({Math.round((assignment.score / assignment.totalQuestions) * 100)}%)
+                          </Typography>
                         ) : assignment.testType === 'Coding' && assignment.status === 'completed' ? (
                           <Typography variant="body2" fontWeight={600}>
-                            {assignment.aiScore !== undefined ? assignment.aiScore : 0}/100
+                            {assignment.score !== undefined && assignment.score !== null ? assignment.score : (assignment.aiScore !== undefined ? assignment.aiScore : 0)}/100
                           </Typography>
                         ) : (
                           <Typography variant="body2" color="text.secondary">-</Typography>
@@ -2089,11 +2249,17 @@ const AdminDashboard = () => {
                             size="small"
                             color={Math.round((assignment.score / assignment.totalQuestions) * 100) >= 75 ? 'success' : 'error'}
                           />
+                        ) : assignment.testType === 'Explanation' && assignment.score !== undefined && assignment.score !== null ? (
+                          <Chip 
+                            label={Math.round((assignment.score / assignment.totalQuestions) * 100) >= 75 ? 'Pass' : 'Fail'}
+                            size="small"
+                            color={Math.round((assignment.score / assignment.totalQuestions) * 100) >= 75 ? 'success' : 'error'}
+                          />
                         ) : assignment.testType === 'Coding' && assignment.status === 'completed' ? (
                           <Chip 
-                            label={(assignment.aiScore !== undefined ? assignment.aiScore : 0) >= 75 ? 'Pass' : 'Fail'}
+                            label={((assignment.score !== undefined && assignment.score !== null) ? assignment.score : (assignment.aiScore !== undefined ? assignment.aiScore : 0)) >= 75 ? 'Pass' : 'Fail'}
                             size="small"
-                            color={(assignment.aiScore !== undefined ? assignment.aiScore : 0) >= 75 ? 'success' : 'error'}
+                            color={((assignment.score !== undefined && assignment.score !== null) ? assignment.score : (assignment.aiScore !== undefined ? assignment.aiScore : 0)) >= 75 ? 'success' : 'error'}
                           />
                         ) : (
                           <Typography variant="body2" color="text.secondary">-</Typography>
@@ -2180,6 +2346,7 @@ const AdminDashboard = () => {
                 <MenuItem value="">Select Test Type</MenuItem>
                 <MenuItem value="Coding">Coding</MenuItem>
                 <MenuItem value="MCQ">MCQ</MenuItem>
+                <MenuItem value="Explanation">Explanation</MenuItem>
               </Select>
             </FormControl>
             
@@ -2369,6 +2536,41 @@ const AdminDashboard = () => {
                   {viewingSubmission?.solution?.code || 'No code submitted'}
                 </pre>
               </Paper>
+              
+              {/* Manual Score Input Section */}
+              <Paper elevation={3} sx={{ p: 3, mt: 3, bgcolor: '#f8f9fa' }}>
+                <Typography variant="h6" gutterBottom>
+                  Manual Scoring
+                </Typography>
+                <Typography variant="body2" color="text.secondary" gutterBottom sx={{ mb: 2 }}>
+                  Override AI score with manual evaluation (0 to 100)
+                </Typography>
+                
+                <Box sx={{ display: 'flex', gap: 2, alignItems: 'flex-start' }}>
+                  <TextField
+                    label="Score (0-100)"
+                    type="number"
+                    value={codingScore}
+                    onChange={(e) => setCodingScore(e.target.value)}
+                    inputProps={{ 
+                      min: 0, 
+                      max: 100,
+                      step: 1
+                    }}
+                    sx={{ flex: 1 }}
+                    size="small"
+                  />
+                  <Button
+                    variant="contained"
+                    color="primary"
+                    onClick={handleSaveCodingScore}
+                    disabled={savingCodingScore || !codingScore}
+                    sx={{ minWidth: 100 }}
+                  >
+                    {savingCodingScore ? 'Saving...' : 'Save Score'}
+                  </Button>
+                </Box>
+              </Paper>
             </Box>
           ) : viewingSubmission?.testType === 'MCQ' ? (
             <Box sx={{ mt: 2 }}>
@@ -2463,6 +2665,113 @@ const AdminDashboard = () => {
                   </Paper>
                 );
               })}
+            </Box>
+          ) : viewingSubmission?.testType === 'Explanation' ? (
+            <Box sx={{ mt: 2 }}>
+              <Typography variant="h6" gutterBottom>
+                Explanation Answers
+              </Typography>
+              
+              {/* Display current score if available */}
+              {viewingSubmission?.explanationAnswer?.score !== undefined && viewingSubmission?.explanationAnswer?.score !== null && (
+                <Box sx={{ mb: 2, p: 2, bgcolor: '#e3f2fd', borderRadius: 1 }}>
+                  <Typography variant="subtitle1" fontWeight={600} color="primary">
+                    Current Score: {viewingSubmission.explanationAnswer.score}/{viewingSubmission.questions?.length || 0} 
+                    ({Math.round((viewingSubmission.explanationAnswer.score / (viewingSubmission.questions?.length || 1)) * 100)}%)
+                  </Typography>
+                </Box>
+              )}
+              
+              <Typography variant="subtitle1" gutterBottom color="text.secondary">
+                Answered: {viewingSubmission?.explanationAnswer?.answers?.filter(a => a.answer && a.answer.trim()).length || 0}/{viewingSubmission?.questions?.length || 0} questions
+              </Typography>
+              
+              {viewingSubmission?.explanationAnswer?.tabSwitchCount !== undefined && viewingSubmission?.explanationAnswer?.tabSwitchCount >= 1 && (
+                <Paper 
+                  elevation={2} 
+                  sx={{ 
+                    p: 2, 
+                    mt: 2, 
+                    bgcolor: viewingSubmission.explanationAnswer.tabSwitchCount >= 2 ? '#ffebee' : '#fff3e0', 
+                    borderLeft: viewingSubmission.explanationAnswer.tabSwitchCount >= 2 ? '4px solid #d32f2f' : '4px solid #ff9800' 
+                  }}
+                >
+                  <Typography 
+                    variant="body2" 
+                    fontWeight={600} 
+                    color={viewingSubmission.explanationAnswer.tabSwitchCount >= 2 ? 'error.main' : 'warning.main'} 
+                    gutterBottom
+                  >
+                    {viewingSubmission.explanationAnswer.tabSwitchCount >= 2 ? '🚫 Test Terminated Due to Tab Switching' : '⚠️ Tab Switch Detected'}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    The candidate switched tabs or windows <strong>{viewingSubmission.explanationAnswer.tabSwitchCount} time(s)</strong> during this test.
+                    {viewingSubmission.explanationAnswer.tabSwitchCount >= 2 && (
+                      <span style={{ display: 'block', marginTop: '8px', fontWeight: 600, color: '#d32f2f' }}>
+                        The test was automatically submitted and the candidate was logged out due to excessive tab switching.
+                      </span>
+                    )}
+                  </Typography>
+                </Paper>
+              )}
+              
+              {viewingSubmission?.questions?.map((question, index) => {
+                const userAnswer = viewingSubmission?.explanationAnswer?.answers?.find(
+                  a => a.question?._id?.toString() === question._id.toString()
+                );
+                
+                return (
+                  <Paper key={question._id} elevation={2} sx={{ p: 2, mb: 2, mt: 2 }}>
+                    <Typography variant="subtitle1" fontWeight={600} gutterBottom>
+                      Question {index + 1}: {question.question}
+                    </Typography>
+                    
+                    <Box sx={{ mt: 2, p: 2, bgcolor: '#f5f5f5', borderRadius: 1 }}>
+                      <Typography variant="body2" fontWeight={600} color="text.secondary" gutterBottom>
+                        Candidate's Answer:
+                      </Typography>
+                      <Typography variant="body1" sx={{ whiteSpace: 'pre-wrap' }}>
+                        {userAnswer?.answer || '(No answer provided)'}
+                      </Typography>
+                    </Box>
+                  </Paper>
+                );
+              })}
+              
+              {/* Score Input Section */}
+              <Paper elevation={3} sx={{ p: 3, mt: 3, bgcolor: '#f8f9fa' }}>
+                <Typography variant="h6" gutterBottom>
+                  Manual Scoring
+                </Typography>
+                <Typography variant="body2" color="text.secondary" gutterBottom sx={{ mb: 2 }}>
+                  Enter the number of correct answers (0 to {viewingSubmission?.questions?.length || 0})
+                </Typography>
+                
+                <Box sx={{ display: 'flex', gap: 2, alignItems: 'flex-start' }}>
+                  <TextField
+                    label="Number of Correct Answers"
+                    type="number"
+                    value={explanationScore}
+                    onChange={(e) => setExplanationScore(e.target.value)}
+                    inputProps={{ 
+                      min: 0, 
+                      max: viewingSubmission?.questions?.length || 0,
+                      step: 1
+                    }}
+                    sx={{ flex: 1 }}
+                    size="small"
+                  />
+                  <Button
+                    variant="contained"
+                    color="primary"
+                    onClick={handleSaveExplanationScore}
+                    disabled={savingScore || !explanationScore}
+                    sx={{ minWidth: 100 }}
+                  >
+                    {savingScore ? 'Saving...' : 'Save Score'}
+                  </Button>
+                </Box>
+              </Paper>
             </Box>
           ) : (
             <Typography>No submission data available</Typography>
