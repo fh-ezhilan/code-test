@@ -4,6 +4,8 @@ const MCQAnswer = require('../models/MCQAnswer');
 const TestSession = require('../models/TestSession');
 const TestAssignment = require('../models/TestAssignment');
 const User = require('../models/User');
+const ExplanationQuestion = require('../models/ExplanationQuestion');
+const ExplanationAnswer = require('../models/ExplanationAnswer');
 const bcrypt = require('bcryptjs');
 const xlsx = require('xlsx');
 
