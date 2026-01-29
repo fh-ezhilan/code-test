@@ -1278,9 +1278,19 @@ const AdminDashboard = () => {
                         <TableCell>
                           {candidate.averageScore !== undefined ? (
                             <Chip 
-                              label={candidate.averageScore >= 75 ? 'Pass' : 'Fail'}
+                              label={
+                                candidate.averageScore < 60 ? 'Red' : 
+                                candidate.averageScore < 80 ? 'Amber' : 
+                                'Green'
+                              }
                               size="small"
-                              color={candidate.averageScore >= 75 ? 'success' : 'error'}
+                              sx={{
+                                bgcolor: candidate.averageScore < 60 ? '#d32f2f' : 
+                                         candidate.averageScore < 80 ? '#ff9800' : 
+                                         '#2e7d32',
+                                color: 'white',
+                                fontWeight: 600
+                              }}
                             />
                           ) : (
                             <Typography variant="body2" color="text.secondary">-</Typography>
@@ -2245,21 +2255,51 @@ const AdminDashboard = () => {
                       <TableCell>
                         {assignment.testType === 'MCQ' && assignment.score !== undefined ? (
                           <Chip 
-                            label={Math.round((assignment.score / assignment.totalQuestions) * 100) >= 75 ? 'Pass' : 'Fail'}
+                            label={
+                              Math.round((assignment.score / assignment.totalQuestions) * 100) < 60 ? 'Red' : 
+                              Math.round((assignment.score / assignment.totalQuestions) * 100) < 80 ? 'Amber' : 
+                              'Green'
+                            }
                             size="small"
-                            color={Math.round((assignment.score / assignment.totalQuestions) * 100) >= 75 ? 'success' : 'error'}
+                            sx={{
+                              bgcolor: Math.round((assignment.score / assignment.totalQuestions) * 100) < 60 ? '#d32f2f' : 
+                                       Math.round((assignment.score / assignment.totalQuestions) * 100) < 80 ? '#ff9800' : 
+                                       '#2e7d32',
+                              color: 'white',
+                              fontWeight: 600
+                            }}
                           />
                         ) : assignment.testType === 'Explanation' && assignment.score !== undefined && assignment.score !== null ? (
                           <Chip 
-                            label={Math.round((assignment.score / assignment.totalQuestions) * 100) >= 75 ? 'Pass' : 'Fail'}
+                            label={
+                              Math.round((assignment.score / assignment.totalQuestions) * 100) < 60 ? 'Red' : 
+                              Math.round((assignment.score / assignment.totalQuestions) * 100) < 80 ? 'Amber' : 
+                              'Green'
+                            }
                             size="small"
-                            color={Math.round((assignment.score / assignment.totalQuestions) * 100) >= 75 ? 'success' : 'error'}
+                            sx={{
+                              bgcolor: Math.round((assignment.score / assignment.totalQuestions) * 100) < 60 ? '#d32f2f' : 
+                                       Math.round((assignment.score / assignment.totalQuestions) * 100) < 80 ? '#ff9800' : 
+                                       '#2e7d32',
+                              color: 'white',
+                              fontWeight: 600
+                            }}
                           />
                         ) : assignment.testType === 'Coding' && assignment.status === 'completed' ? (
                           <Chip 
-                            label={((assignment.score !== undefined && assignment.score !== null) ? assignment.score : (assignment.aiScore !== undefined ? assignment.aiScore : 0)) >= 75 ? 'Pass' : 'Fail'}
+                            label={
+                              ((assignment.score !== undefined && assignment.score !== null) ? assignment.score : (assignment.aiScore !== undefined ? assignment.aiScore : 0)) < 60 ? 'Red' : 
+                              ((assignment.score !== undefined && assignment.score !== null) ? assignment.score : (assignment.aiScore !== undefined ? assignment.aiScore : 0)) < 80 ? 'Amber' : 
+                              'Green'
+                            }
                             size="small"
-                            color={((assignment.score !== undefined && assignment.score !== null) ? assignment.score : (assignment.aiScore !== undefined ? assignment.aiScore : 0)) >= 75 ? 'success' : 'error'}
+                            sx={{
+                              bgcolor: ((assignment.score !== undefined && assignment.score !== null) ? assignment.score : (assignment.aiScore !== undefined ? assignment.aiScore : 0)) < 60 ? '#d32f2f' : 
+                                       ((assignment.score !== undefined && assignment.score !== null) ? assignment.score : (assignment.aiScore !== undefined ? assignment.aiScore : 0)) < 80 ? '#ff9800' : 
+                                       '#2e7d32',
+                              color: 'white',
+                              fontWeight: 600
+                            }}
                           />
                         ) : (
                           <Typography variant="body2" color="text.secondary">-</Typography>
